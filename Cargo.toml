@@ -1,0 +1,23 @@
+[workspace]
+members = [
+    "tgcryptors-core",
+    "tgcryptors-python",
+]
+resolver = "2"
+
+[workspace.package]
+version = "1.1.2"
+edition = "2021"
+license = "LGPL-3.0-or-later"
+rust-version = "1.83"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
+[profile.bench]
+inherits = "release"
+debug = true
+strip = "none"

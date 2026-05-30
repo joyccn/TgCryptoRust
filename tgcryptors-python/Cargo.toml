@@ -1,0 +1,15 @@
+[package]
+name = "tgcryptors-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Python bindings for TgCryptoRS — high-performance Telegram cryptography"
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+tgcryptors-core = { path = "../tgcryptors-core" }
+pyo3 = { version = "0.28.3", features = ["extension-module", "generate-import-lib"] }

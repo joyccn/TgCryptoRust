@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust Toolchain (stable + clippy + rustfmt)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Restore Cargo Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust Toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Cargo Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Rust Tests
+        run: cargo test -p tgcryptors-core --release
+
+  python:
+    name: Python ${{ matrix.python }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust Toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Cargo Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Python ${{ matrix.python }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install maturin
+        run: pip install "maturin[patchelf]"
+
+      - name: Build Wheel & Smoke Test
+        run: |
+          maturin build --release
+          pip install target/wheels/*.whl
+          python - <<'PY'
+          import tgcrypto
+          import tgcryptors
+
+          data = b"TgCryptoRS wheel smoke test"
+          key = bytes(range(32))
+          iv = bytes(range(16))
+          encrypted = tgcryptors.ctr256_encrypt(data, key, iv, b"\x00")
+          decrypted = tgcrypto.ctr256_decrypt(encrypted, key, iv, b"\x00")
+
+          assert tgcrypto.__version__
+          assert tgcrypto.__version__ == tgcryptors.__version__
+          assert tgcrypto.runtime_info()["implementation"] == "rust"
+          assert decrypted == data
+          print(f"TgCryptoRS {tgcrypto.__version__} wheel smoke test passed")
+          PY
+          python -m unittest discover -s tests -v

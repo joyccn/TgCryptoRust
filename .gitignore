@@ -1,0 +1,18 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.whl
+*.pyc
+.venv/
+dist/
+
+# IDEs
+.idea/
+.vscode/
+
+# Build artifacts
+*.so
+*.d

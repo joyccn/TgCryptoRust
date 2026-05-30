@@ -1,0 +1,214 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  check-version:
+    name: Check Version & Release Status
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      skip: ${{ steps.check_release.outputs.skip }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get Version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(grep -E '^version\s*=\s*".*"' pyproject.toml | head -n 1 | awk -F'"' '{print $2}')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not parse version from pyproject.toml"
+            exit 1
+          fi
+          echo "Found version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check Release Status
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.get_version.outputs.version }}"
+
+          if ! git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
+            echo "Tag $TAG is new — proceeding with release."
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          ASSET_COUNT=$(gh release view "$TAG" --json assets -q '.assets | length' 2>/dev/null || echo "0")
+          if [ "$ASSET_COUNT" -gt 0 ]; then
+            echo "Release $TAG already has $ASSET_COUNT asset(s). Skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release $TAG exists but has no assets — re-running."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+  create-release:
+    name: Create GitHub Release
+    needs: check-version
+    if: needs.check-version.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.create_tag.outputs.tag }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Create Git Tag (if not exists)
+        id: create_tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ needs.check-version.outputs.version }}"
+          if ! git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "Created and pushed tag $TAG"
+          else
+            echo "Tag $TAG already exists — skipping tag creation."
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          name: Release v${{ needs.check-version.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(needs.check-version.outputs.version, 'b') || contains(needs.check-version.outputs.version, 'a') || contains(needs.check-version.outputs.version, 'rc') }}
+          generate_release_notes: true
+
+  build-wheels:
+    name: Build Wheel (${{ matrix.os }} / py${{ matrix.python }})
+    needs: [check-version, create-release]
+    if: needs.check-version.outputs.skip == 'false'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.check-version.outputs.version }}
+
+      - name: Setup Python ${{ matrix.python }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Build Wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist --interpreter python${{ matrix.python }}
+          sccache: "true"
+
+      - name: Upload Wheel as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-py${{ matrix.python }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  build-linux-arm:
+    name: Build Wheel (Linux ARM / ${{ matrix.target }} / py${{ matrix.python }})
+    needs: [check-version, create-release]
+    if: needs.check-version.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-unknown-linux-gnu, armv7-unknown-linux-gnueabihf]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.check-version.outputs.version }}
+
+      - name: Setup Python ${{ matrix.python }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Build Wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          command: build
+          args: --release --out dist --interpreter python${{ matrix.python }}
+          sccache: "true"
+          manylinux: auto
+
+      - name: Upload Wheel as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}-py${{ matrix.python }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  build-sdist:
+    name: Build SDist
+    needs: [check-version, create-release]
+    if: needs.check-version.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.check-version.outputs.version }}
+
+      - name: Build SDist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+
+      - name: Upload SDist as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  upload-to-release:
+    name: Upload Assets to Release
+    needs: [check-version, build-wheels, build-linux-arm, build-sdist]
+    if: needs.check-version.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List Files to Upload
+        run: ls -lh dist/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          files: dist/*
