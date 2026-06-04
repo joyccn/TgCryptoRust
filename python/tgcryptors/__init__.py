@@ -1,4 +1,4 @@
-"""TgCryptoRS public Python API."""
+"""TgCryptoRust public Python API."""
 
 from ._native import (  # noqa: F401
     Ctr256,

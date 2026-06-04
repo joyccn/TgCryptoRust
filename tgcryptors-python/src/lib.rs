@@ -1,4 +1,4 @@
-//! Python bindings for TgCryptoRS.
+//! Python bindings for TgCryptoRust.
 //!
 //! Provides the native `tgcryptors` module. The packaged `tgcrypto` shim
 //! re-exports this module so existing TgCrypto imports keep working.
@@ -421,7 +421,7 @@ impl Ige256 {
     }
 }
 
-/// Native TgCryptoRS Python extension module.
+/// Native TgCryptoRust Python extension module.
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", VERSION)?;

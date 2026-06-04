@@ -79,7 +79,7 @@ jobs:
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false')
     environment:
       name: pypi
-      url: https://pypi.org/project/TgCryptoRS/
+      url: https://pypi.org/project/TgCryptoRust/
     permissions:
       id-token: write
 

@@ -1,6 +1,6 @@
 """Compatibility shim for projects that import TgCrypto as ``tgcrypto``.
 
-TgCryptoRS exposes its native extension as ``tgcryptors`` and re-exports the
+TgCryptoRust exposes its native extension as ``tgcryptors`` and re-exports the
 same API here so existing Telegram clients can switch packages without code
 changes.
 """

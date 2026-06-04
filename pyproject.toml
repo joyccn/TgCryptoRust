@@ -3,7 +3,7 @@ requires = ["maturin>=1.13.3"]
 build-backend = "maturin"
 
 [project]
-name = "TgCryptoRS"
+name = "TgCryptoRust"
 version = "1.1.2"
 description = "Rust-powered drop-in replacement for TgCrypto"
 readme = "README.md"
@@ -44,8 +44,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/joyccn/TgCryptoRS"
-Source = "https://github.com/joyccn/TgCryptoRS"
+Homepage = "https://github.com/joyccn/TgCryptoRust"
+Source = "https://github.com/joyccn/TgCryptoRust"
 
 [tool.maturin]
 manifest-path = "tgcryptors-python/Cargo.toml"

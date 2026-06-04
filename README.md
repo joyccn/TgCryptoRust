@@ -1,13 +1,13 @@
-# TgCryptoRS
+# TgCryptoRust
 
 Rust-powered, AES-NI accelerated cryptography for Telegram clients.
 
-[![CI](https://github.com/joyccn/TgCryptoRS/actions/workflows/ci.yml/badge.svg)](https://github.com/joyccn/TgCryptoRS/actions/workflows/ci.yml)
+[![CI](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml/badge.svg)](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-LGPL--3.0-blue)
 ![Python](https://img.shields.io/badge/python-3.9--3.14-brightgreen)
 ![Rust](https://img.shields.io/badge/rust-1.83%2B-orange)
 
-TgCryptoRS is a drop-in replacement for TgCrypto, implemented in Rust and
+TgCryptoRust is a drop-in replacement for TgCrypto, implemented in Rust and
 packaged for Python through PyO3 and maturin. It provides the Telegram-focused
 AES-256 modes used by MTProto clients:
 
@@ -33,9 +33,9 @@ developing the project locally.
 ## Installation
 
 ```bash
-uv add TgCryptoRS
-uv pip install TgCryptoRS
-pip install TgCryptoRS
+uv add TgCryptoRust
+uv pip install TgCryptoRust
+pip install TgCryptoRust
 ```
 
 ## Imports
@@ -141,7 +141,7 @@ encrypted = stream.encrypt(data[:512]) + stream.encrypt(data[512:])
 
 ## Compatibility
 
-TgCryptoRS keeps the TgCrypto-compatible function names, argument order, return
+TgCryptoRust keeps the TgCrypto-compatible function names, argument order, return
 types, and validation behavior for:
 
 - `ige256_encrypt(data, key, iv)`
@@ -151,7 +151,7 @@ types, and validation behavior for:
 - `cbc256_encrypt(data, key, iv)`
 - `cbc256_decrypt(data, key, iv)`
 
-The PyPI package name is `TgCryptoRS`. The native module is `tgcryptors`, and
+The PyPI package name is `TgCryptoRust`. The native module is `tgcryptors`, and
 the compatibility module is `tgcrypto`.
 
 ## Runtime Metadata
@@ -199,11 +199,11 @@ on every CPU.
 
 ## Migration From TgrCrypto
 
-`TgrCrypto` is deprecated in favor of `TgCryptoRS`.
+`TgrCrypto` is deprecated in favor of `TgCryptoRust`.
 
 ```bash
 pip uninstall TgrCrypto
-pip install TgCryptoRS
+pip install TgCryptoRust
 ```
 
 Existing code that imports `tgcrypto` can remain unchanged.

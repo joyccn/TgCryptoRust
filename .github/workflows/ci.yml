@@ -95,7 +95,7 @@ jobs:
           import tgcrypto
           import tgcryptors
 
-          data = b"TgCryptoRS wheel smoke test"
+          data = b"TgCryptoRust wheel smoke test"
           key = bytes(range(32))
           iv = bytes(range(16))
           encrypted = tgcryptors.ctr256_encrypt(data, key, iv, b"\x00")
@@ -105,6 +105,6 @@ jobs:
           assert tgcrypto.__version__ == tgcryptors.__version__
           assert tgcrypto.runtime_info()["implementation"] == "rust"
           assert decrypted == data
-          print(f"TgCryptoRS {tgcrypto.__version__} wheel smoke test passed")
+          print(f"TgCryptoRust {tgcrypto.__version__} wheel smoke test passed")
           PY
           python -m unittest discover -s tests -v
