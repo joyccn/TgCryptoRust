@@ -146,6 +146,7 @@ fn cbc256_decrypt_internal(
 }
 
 /// Encrypt aligned data and return the ciphertext.
+#[must_use]
 pub fn cbc256_encrypt(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16]) -> Vec<u8> {
     let mut out = vec![0u8; data.len()];
     cbc256_encrypt_into(data, key, iv, &mut out);
@@ -153,6 +154,7 @@ pub fn cbc256_encrypt(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16]) -> Vec<u8>
 }
 
 /// Decrypt aligned data and return the plaintext.
+#[must_use]
 pub fn cbc256_decrypt(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16]) -> Vec<u8> {
     let mut out = vec![0u8; data.len()];
     cbc256_decrypt_into(data, key, iv, &mut out);

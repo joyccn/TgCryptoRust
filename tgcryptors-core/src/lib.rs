@@ -23,6 +23,9 @@ pub mod ige256;
 /// Whether the crate was compiled with the AES-NI feature enabled.
 pub const AESNI_FEATURE_ENABLED: bool = cfg!(feature = "aesni");
 
+/// AES block size in bytes (16).
+pub const AES_BLOCK_SIZE: usize = aes256::AES_BLOCK_SIZE;
+
 /// Re-export the main APIs for convenience.
 pub use aes256::ExpandedKey;
 pub use cbc256::{cbc256_decrypt, cbc256_decrypt_into, cbc256_encrypt, cbc256_encrypt_into};

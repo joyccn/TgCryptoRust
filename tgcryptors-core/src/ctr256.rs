@@ -224,6 +224,7 @@ fn ctr256_encrypt_internal(
 }
 
 /// Encrypt data and return the ciphertext.
+#[must_use]
 pub fn ctr256_encrypt(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], state: &mut u8) -> Vec<u8> {
     let mut out = vec![0u8; data.len()];
     ctr256_encrypt_into(data, key, iv, state, &mut out);
@@ -232,6 +233,7 @@ pub fn ctr256_encrypt(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], state: &mu
 
 #[inline]
 /// Decrypt data and return the plaintext.
+#[must_use]
 pub fn ctr256_decrypt(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], state: &mut u8) -> Vec<u8> {
     ctr256_encrypt(data, key, iv, state)
 }

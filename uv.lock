@@ -3,6 +3,6 @@ revision = 3
 requires-python = ">=3.9, <3.15"
 
 [[package]]
-name = "tgcryptors"
+name = "tgcryptorust"
 version = "1.1.2"
 source = { editable = "." }

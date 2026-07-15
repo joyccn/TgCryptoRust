@@ -123,6 +123,7 @@ pub fn ige256_decrypt_into_ek(data: &[u8], dk: &ExpandedKey, iv: &mut [u8; 32], 
 /// Encrypt aligned data and return the ciphertext.
 ///
 /// This helper clones the IV, so the caller's IV is left unchanged.
+#[must_use]
 pub fn ige256_encrypt(data: &[u8], key: &[u8; 32], iv: &[u8; 32]) -> Vec<u8> {
     let mut out = vec![0u8; data.len()];
     let mut iv_clone = *iv;
@@ -133,6 +134,7 @@ pub fn ige256_encrypt(data: &[u8], key: &[u8; 32], iv: &[u8; 32]) -> Vec<u8> {
 /// Decrypt aligned data and return the plaintext.
 ///
 /// This helper clones the IV, so the caller's IV is left unchanged.
+#[must_use]
 pub fn ige256_decrypt(data: &[u8], key: &[u8; 32], iv: &[u8; 32]) -> Vec<u8> {
     let mut out = vec![0u8; data.len()];
     let mut iv_clone = *iv;
@@ -210,7 +212,7 @@ mod tests {
         let key = test_key();
         let iv = test_iv();
         let data = vec![0u8; 15];
-        ige256_encrypt(&data, &key, &iv);
+        let _ = ige256_encrypt(&data, &key, &iv);
     }
 
     #[test]

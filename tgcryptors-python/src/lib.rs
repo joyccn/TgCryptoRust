@@ -15,8 +15,8 @@ use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use tgcryptors_core::AES_BLOCK_SIZE;
 
-const AES_BLOCK_SIZE: usize = 16;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Copy a Python bytes-like value into a fixed-size Rust array.
