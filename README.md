@@ -11,7 +11,7 @@ Rust-powered, AES-NI accelerated cryptography for Telegram clients.
 [![CI](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml/badge.svg)](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-LGPLv3+-blue)
 ![Python](https://img.shields.io/badge/python-3.9--3.14-brightgreen)
-![Rust](https://img.shields.io/badge/rust-1.83%2B-orange)
+![Rust](https://img.shields.io/badge/rust-1.86%2B-orange)
 
 **TgCryptoRust** is a drop-in replacement for [TgCrypto](https://github.com/pyrogram/tgcrypto),
 implemented in Rust and packaged for Python through PyO3 and Maturin.
@@ -24,7 +24,7 @@ It implements the cryptographic algorithms Telegram requires, namely:
 ## Requirements
 
 - Python 3.9 through 3.14
-- Rust 1.83+ (only when building from source)
+- Rust 1.86+ (only when building from source)
 
 Prebuilt wheels are available for common desktop and server platforms.
 Rust is only required when a wheel is not available for your platform.
@@ -194,6 +194,9 @@ On x86 and x86_64, AES-NI is detected at runtime when the crate is built with
 the default `aesni` feature. Other targets use a software fallback (T-table based,
 not guaranteed constant-time on every CPU).
 
+Expanded key material is zeroized on drop using the [`zeroize`](https://crates.io/crates/zeroize)
+crate, which guarantees the compiler will not optimize away the clearing.
+
 ## Migrating From TgrCrypto
 
 `TgrCrypto` is deprecated in favor of `TgCryptoRust`.
@@ -231,6 +234,17 @@ Build a wheel:
 ```bash
 uv build --wheel
 ```
+
+## Changelog
+
+### 1.3.0
+
+- Bumped MSRV from Rust 1.83 to 1.86.
+- Replaced manual key zeroization with the `zeroize` crate for guaranteed
+  compiler-resistant memory clearing.
+- Removed deprecated `generate-import-lib` feature (no-op since PyO3 0.29).
+- Added CI job to verify MSRV compliance.
+- Fixed clippy warnings and imprecise documentation comments.
 
 ## License
 
