@@ -22,3 +22,4 @@ harness = false
 
 [dependencies]
 rayon = "1.12.0"
+zeroize = { version = "1.8", features = ["derive"] }

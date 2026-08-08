@@ -26,7 +26,7 @@ const NB: usize = 4;
 ///
 /// Sensitive material is zeroized on drop.
 #[repr(align(16))]
-#[derive(Clone)]
+#[derive(Clone, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 pub struct ExpandedKey {
     pub words: [u32; EXPANDED_KEY_SIZE],
     round_key_bytes: [u8; (NR + 1) * 16],
@@ -67,17 +67,7 @@ impl ExpandedKey {
     }
 }
 
-impl Drop for ExpandedKey {
-    fn drop(&mut self) {
-        for w in self.words.iter_mut() {
-            unsafe { core::ptr::write_volatile(w, 0) };
-        }
-        for b in self.round_key_bytes.iter_mut() {
-            unsafe { core::ptr::write_volatile(b, 0) };
-        }
-        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-    }
-}
+
 
 /// Cache the AES-NI feature check so block operations do not repeat CPUID.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
