@@ -9,7 +9,7 @@
 Rust-powered, AES-NI accelerated cryptography for Telegram clients.
 
 [![CI](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml/badge.svg)](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml)
-![License](https://img.shields.io/badge/license-LGPLv3+-blue)
+![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.9--3.14-brightgreen)
 ![Rust](https://img.shields.io/badge/rust-1.86%2B-orange)
 
@@ -245,9 +245,14 @@ uv build --wheel
 - Removed deprecated `generate-import-lib` feature (no-op since PyO3 0.29).
 - Added CI job to verify MSRV compliance.
 - Fixed clippy warnings and imprecise documentation comments.
+- Changed license from LGPLv3+ to MIT.
 
 ## License
 
-[LGPLv3+](COPYING.lesser) — GNU Lesser General Public License v3 or later.
+[MIT](LICENSE) — Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including without
+limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software.
 
-© 2025-Present Joy. See [COPYING](COPYING) and [COPYING.lesser](COPYING.lesser).
+© 2025-Present Joy.

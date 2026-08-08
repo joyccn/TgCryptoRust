@@ -8,7 +8,7 @@ version = "1.3.0"
 description = "Rust-powered drop-in replacement for TgCrypto"
 readme = "README.md"
 requires-python = ">=3.9,<3.15"
-license = "LGPL-3.0-or-later"
+license = "MIT"
 keywords = [
     "kurigram",
     "telegram",
@@ -22,7 +22,7 @@ keywords = [
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Rust",
     "Programming Language :: Python",
@@ -53,8 +53,7 @@ module-name = "tgcryptors._native"
 python-source = "python"
 features = ["pyo3/extension-module"]
 include = [
-    { path = "COPYING", format = "sdist" },
-    { path = "COPYING.lesser", format = "sdist" },
+    { path = "LICENSE", format = "sdist" },
     { path = "python/tgcrypto/__init__.py", format = "wheel" },
     { path = "python/tgcryptors/__init__.py", format = "wheel" },
 ]
