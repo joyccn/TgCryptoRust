@@ -40,6 +40,22 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  msrv:
+    name: MSRV Check (rust 1.86)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust Toolchain (1.86)
+        uses: dtolnay/rust-toolchain@1.86.0
+
+      - name: Restore Cargo Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify MSRV
+        run: cargo check --all-targets --all-features
+
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
