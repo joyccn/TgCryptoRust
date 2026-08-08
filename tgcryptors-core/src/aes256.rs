@@ -695,7 +695,7 @@ pub fn set_decryption_key(key: &[u8; 32], expanded_key: &mut [u32; EXPANDED_KEY_
         j -= 4;
     }
 
-    for i in (4..NR * 4).step_by(1) {
+    for i in 4..NR * 4 {
         let ek = expanded_key[i];
         expanded_key[i] = TD0[TE1[(ek >> 24) as usize] as usize & 0xff]
             ^ TD1[TE1[((ek >> 16) & 0xff) as usize] as usize & 0xff]

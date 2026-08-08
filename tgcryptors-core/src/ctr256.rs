@@ -25,10 +25,10 @@ fn increment_counter(iv: &mut [u8; 16]) {
     }
 }
 
-/// Add a 64-bit block offset to a 16-byte big-endian counter.
+/// Add an offset to a 16-byte big-endian counter.
 ///
-/// Treats the lower 8 bytes of the counter as a big-endian u64, adds the
-/// offset, and propagates any carry into the upper 8 bytes.
+/// Performs a 128-bit big-endian addition of `offset` to the counter,
+/// propagating carry across all 16 bytes.
 #[inline]
 fn add_counter(iv: &[u8; 16], offset: u64) -> [u8; 16] {
     let mut out = *iv;
