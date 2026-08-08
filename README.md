@@ -255,4 +255,4 @@ obtaining a copy of this software and associated documentation files (the
 limitation the rights to use, copy, modify, merge, publish, distribute,
 sublicense, and/or sell copies of the Software.
 
-© 2025-Present Joy.
+© 2026-Present Joy.
