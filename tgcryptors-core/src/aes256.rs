@@ -67,8 +67,6 @@ impl ExpandedKey {
     }
 }
 
-
-
 /// Cache the AES-NI feature check so block operations do not repeat CPUID.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline]
@@ -695,6 +693,7 @@ pub fn set_decryption_key(key: &[u8; 32], expanded_key: &mut [u32; EXPANDED_KEY_
         j -= 4;
     }
 
+    #[allow(clippy::needless_range_loop)]
     for i in 4..NR * 4 {
         let ek = expanded_key[i];
         expanded_key[i] = TD0[TE1[(ek >> 24) as usize] as usize & 0xff]
