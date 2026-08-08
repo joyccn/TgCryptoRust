@@ -51,7 +51,7 @@ Source = "https://github.com/joyccn/TgCryptoRust"
 manifest-path = "tgcryptors-python/Cargo.toml"
 module-name = "tgcryptors._native"
 python-source = "python"
-features = ["pyo3/extension-module", "pyo3/generate-import-lib"]
+features = ["pyo3/extension-module"]
 include = [
     { path = "COPYING", format = "sdist" },
     { path = "COPYING.lesser", format = "sdist" },
