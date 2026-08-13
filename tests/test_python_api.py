@@ -192,7 +192,7 @@ class TgCryptoApiTests(unittest.TestCase):
         self.assertIn("Stateful AES-256-IGE stream cipher", tgcrypto.Ige256.__doc__)
 
     def test_runtime_metadata_is_available(self) -> None:
-        self.assertEqual(tgcrypto.__version__, "1.3.0")
+        self.assertEqual(tgcrypto.__version__, "1.3.1")
 
         info = tgcrypto.runtime_info()
 

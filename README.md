@@ -258,6 +258,15 @@ uv build --wheel
 
 ## Changelog
 
+### 1.3.1
+
+- `ctr256_encrypt`/`ctr256_decrypt` now accept `bytearray` (and `bytes`) for
+  `data`, `key`, `iv`, and `state`. When `iv` or `state` are passed as
+  `bytearray`, the advanced counter and residual byte offset are written back
+  in place, matching TgCrypto's stateful semantics. This fixes a crash at
+  connect time with pyrogram and its forks, whose obfuscated TCP transports
+  and CDN downloads pass `bytearray` and rely on the in-place carry (issue #4).
+
 ### 1.3.0
 
 - Bumped MSRV from Rust 1.83 to 1.86.
