@@ -212,3 +212,5 @@ jobs:
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
           files: dist/*
+
+# touch: force workflow re-registration
