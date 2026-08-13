@@ -95,6 +95,27 @@ decrypted = tgcryptors.ctr256_decrypt(encrypted, key, iv, state)
 assert decrypted == data
 ```
 
+TgCrypto-compatible `bytearray` mode: `data`, `key`, `iv`, and `state` may also
+be passed as `bytearray`. When `iv` or `state` are `bytearray`, they are
+updated **in place** — after the call they hold the advanced counter and
+residual offset, so passing the same objects to the next call continues the
+stream across chunks. This is how pyrogram and its forks (kurigram, pyrofork,
+...) drive the obfuscated TCP transports and CDN file downloads:
+
+```python
+import os
+import tgcrypto
+
+key = os.urandom(32)
+iv = bytearray(os.urandom(16))
+state = bytearray(1)
+
+first = tgcrypto.ctr256_encrypt(data[:100], key, iv, state)   # iv/state advance in place
+second = tgcrypto.ctr256_encrypt(data[100:], key, iv, state)   # continues the stream
+```
+
+Passing plain `bytes` behaves as a stateless one-shot call.
+
 ### CBC Mode
 
 **Note**: Data must be padded to a multiple of the block size (16 bytes).
@@ -236,6 +257,15 @@ uv build --wheel
 ```
 
 ## Changelog
+
+### 1.3.1
+
+- `ctr256_encrypt`/`ctr256_decrypt` now accept `bytearray` (and `bytes`) for
+  `data`, `key`, `iv`, and `state`. When `iv` or `state` are passed as
+  `bytearray`, the advanced counter and residual byte offset are written back
+  in place, matching TgCrypto's stateful semantics. This fixes a crash at
+  connect time with pyrogram and its forks, whose obfuscated TCP transports
+  and CDN downloads pass `bytearray` and rely on the in-place carry (issue #4).
 
 ### 1.3.0
 

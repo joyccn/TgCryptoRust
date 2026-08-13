@@ -10,10 +10,11 @@
 //! - `cbc256_decrypt(data, key, iv) -> bytes`
 
 use core::slice;
-use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict};
+use pyo3::sync::critical_section::with_critical_section;
+use pyo3::types::{PyAny, PyByteArray, PyBytes, PyDict};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use tgcryptors_core::AES_BLOCK_SIZE;
 
@@ -45,6 +46,75 @@ fn validate_ctr_state(state: &[u8]) -> PyResult<u8> {
         ));
     }
     Ok(state)
+}
+
+/// A `bytes` or `bytearray` argument.
+///
+/// `bytes` is read zero-copy and treated as stateless input. `bytearray`
+/// contents are copied out up front, because the buffer may be mutated by
+/// Python code while the GIL is released during the operation; the original
+/// object is kept so mutated state can be written back afterwards (see
+/// [`BufferInput::into_source`]).
+enum BufferInput<'py> {
+    Bytes(Bound<'py, PyBytes>),
+    ByteArray {
+        data: Vec<u8>,
+        source: Bound<'py, PyByteArray>,
+    },
+}
+
+impl<'py> BufferInput<'py> {
+    fn from_any(ob: &Bound<'py, PyAny>, label: &str) -> PyResult<Self> {
+        if let Ok(bytes) = ob.cast::<PyBytes>() {
+            return Ok(BufferInput::Bytes(bytes.clone()));
+        }
+        if let Ok(array) = ob.cast::<PyByteArray>() {
+            return Ok(BufferInput::ByteArray {
+                data: array.to_vec(),
+                source: array.clone(),
+            });
+        }
+        Err(PyTypeError::new_err(format!(
+            "{label} must be bytes or bytearray"
+        )))
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            BufferInput::Bytes(bytes) => bytes.as_bytes(),
+            BufferInput::ByteArray { data, .. } => data,
+        }
+    }
+
+    /// Take the underlying `bytearray` to write state back into, if any.
+    fn into_source(self) -> Option<Bound<'py, PyByteArray>> {
+        match self {
+            BufferInput::Bytes(_) => None,
+            BufferInput::ByteArray { source, .. } => Some(source),
+        }
+    }
+}
+
+/// Overwrite the contents of a `bytearray` with `value`.
+///
+/// The buffer length is guaranteed to match `value` because extraction copied
+/// the exact same length and Python code cannot legally resize the object
+/// while this function holds it inside the critical section.
+fn write_back(byte_array: &Bound<'_, PyByteArray>, value: &[u8]) {
+    with_critical_section(byte_array.as_any(), || {
+        debug_assert_eq!(
+            byte_array.len(),
+            value.len(),
+            "write_back: bytearray length ({}) must match value length ({})",
+            byte_array.len(),
+            value.len()
+        );
+
+        // SAFETY: the critical section prevents concurrent mutation of the
+        // buffer, and the buffer was not resized since extraction; the
+        // lengths are asserted to match.
+        unsafe { byte_array.as_bytes_mut() }.copy_from_slice(value);
+    });
 }
 
 /// Zero-copy PyBytes allocation with GIL release and panic isolation.
@@ -156,48 +226,83 @@ fn ige256_decrypt<'py>(
 /// Encrypt bytes with AES-256-CTR.
 ///
 /// Args:
-///     data: Plaintext bytes of any length.
-///     key: AES-256 key, exactly 32 bytes.
-///     iv: Counter block, exactly 16 bytes.
-///     state: Residual CTR byte offset encoded as a one-byte `bytes` object.
+///     data: Plaintext bytes of any length. May be `bytes` or `bytearray`.
+///     key: AES-256 key, exactly 32 bytes. May be `bytes` or `bytearray`.
+///     iv: Counter block, exactly 16 bytes. May be `bytes` or `bytearray`.
+///     state: Residual CTR byte offset encoded as a one-byte `bytes` or
+///         `bytearray`.
 ///
 /// Returns:
 ///     The encrypted ciphertext as `bytes`.
 ///
+/// Notes:
+///     When `iv` or `state` are passed as `bytearray`, they are updated in
+///     place: after the call they hold the advanced counter and residual
+///     offset, so passing the same objects to the next call continues the
+///     keystream (TgCrypto-compatible, required by pyrogram and its forks).
+///     `bytes` inputs are treated as stateless one-shot calls.
+///
 /// Raises:
-///     ValueError: If `key`, `iv`, or `state` are invalid.
+///     TypeError: If `data`, `key`, `iv`, or `state` are not `bytes` or
+///         `bytearray`.
+///     ValueError: If `data`, `key`, `iv`, or `state` have invalid lengths.
 ///     OverflowError: If the requested output would exceed Python's `bytes` size limit.
 ///     RuntimeError: If an unexpected internal error occurs.
 #[pyfunction]
 #[pyo3(signature = (data, key, iv, state))]
 fn ctr256_encrypt<'py>(
     py: Python<'py>,
-    data: &[u8],
-    key: &[u8],
-    iv: &[u8],
-    state: &[u8],
+    data: &Bound<'py, PyAny>,
+    key: &Bound<'py, PyAny>,
+    iv: &Bound<'py, PyAny>,
+    state: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
-    let key_arr = copy_array::<32>(key, "Key")?;
-    let mut iv_arr = copy_array::<16>(iv, "IV")?;
-    let mut state_val = validate_ctr_state(state)?;
+    let data = BufferInput::from_any(data, "Data")?;
+    let key = BufferInput::from_any(key, "Key")?;
+    let iv = BufferInput::from_any(iv, "IV")?;
+    let state = BufferInput::from_any(state, "State")?;
 
-    let (bytes, _) = execute_zerocopy(py, data.len(), move |dest| {
-        tgcryptors_core::ctr256_encrypt_into(data, &key_arr, &mut iv_arr, &mut state_val, dest);
+    let key_arr = copy_array::<32>(key.as_bytes(), "Key")?;
+    let mut iv_arr = copy_array::<16>(iv.as_bytes(), "IV")?;
+    let mut state_val = validate_ctr_state(state.as_bytes())?;
+    let data_slice = data.as_bytes();
+    let iv_source = iv.into_source();
+    let state_source = state.into_source();
+
+    let (bytes, (next_iv, next_state)) = execute_zerocopy(py, data_slice.len(), move |dest| {
+        tgcryptors_core::ctr256_encrypt_into(
+            data_slice,
+            &key_arr,
+            &mut iv_arr,
+            &mut state_val,
+            dest,
+        );
+        (iv_arr, state_val)
     })?;
+
+    if let Some(source) = iv_source {
+        write_back(&source, &next_iv);
+    }
+    if let Some(source) = state_source {
+        write_back(&source, &[next_state]);
+    }
+
     Ok(bytes)
 }
 
 /// Decrypt bytes with AES-256-CTR.
 ///
-/// CTR is symmetric, so decryption delegates to `ctr256_encrypt`.
+/// CTR is symmetric, so decryption delegates to `ctr256_encrypt`. See
+/// [`ctr256_encrypt`] for the accepted argument types and the in-place
+/// `bytearray` carry semantics.
 #[pyfunction]
 #[pyo3(signature = (data, key, iv, state))]
 fn ctr256_decrypt<'py>(
     py: Python<'py>,
-    data: &[u8],
-    key: &[u8],
-    iv: &[u8],
-    state: &[u8],
+    data: &Bound<'py, PyAny>,
+    key: &Bound<'py, PyAny>,
+    iv: &Bound<'py, PyAny>,
+    state: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
     ctr256_encrypt(py, data, key, iv, state)
 }
