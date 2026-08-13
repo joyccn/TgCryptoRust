@@ -43,6 +43,87 @@ class TgCryptoApiTests(unittest.TestCase):
 
         self.assertEqual(actual, expected)
 
+    def test_ctr_accepts_bytearray(self) -> None:
+        expected = tgcrypto.ctr256_encrypt(self.data, self.key, self.iv_cbc, b"\x00")
+
+        ciphertext = tgcrypto.ctr256_encrypt(
+            bytearray(self.data),
+            bytearray(self.key),
+            bytearray(self.iv_cbc),
+            bytearray(1),
+        )
+
+        self.assertEqual(ciphertext, expected)
+
+    def test_ctr_bytearray_state_carries_across_calls(self) -> None:
+        data = self.data + b"payload" * 40
+        expected = tgcrypto.ctr256_encrypt(data, self.key, self.iv_cbc, b"\x00")
+
+        enc_iv = bytearray(self.iv_cbc)
+        enc_state = bytearray(1)
+        ciphertext = (
+            tgcrypto.ctr256_encrypt(data[:100], self.key, enc_iv, enc_state)
+            + tgcrypto.ctr256_encrypt(data[100:333], self.key, enc_iv, enc_state)
+            + tgcrypto.ctr256_encrypt(data[333:], self.key, enc_iv, enc_state)
+        )
+
+        self.assertEqual(ciphertext, expected)
+
+        dec_iv = bytearray(self.iv_cbc)
+        dec_state = bytearray(1)
+        plaintext = (
+            tgcrypto.ctr256_decrypt(ciphertext[:5], self.key, dec_iv, dec_state)
+            + tgcrypto.ctr256_decrypt(ciphertext[5:700], self.key, dec_iv, dec_state)
+            + tgcrypto.ctr256_decrypt(ciphertext[700:], self.key, dec_iv, dec_state)
+        )
+
+        self.assertEqual(plaintext, data)
+
+    def test_ctr_bytearray_large_chunked_roundtrip(self) -> None:
+        data = bytes(range(256)) * 2048
+        key = self.key
+        iv0 = self.iv_cbc
+
+        enc_iv = bytearray(iv0)
+        enc_state = bytearray(1)
+        ciphertext = b""
+        for i in range(0, len(data), 65553):
+            ciphertext += tgcrypto.ctr256_decrypt(
+                data[i : i + 65553], key, enc_iv, enc_state
+            )
+
+        dec_iv = bytearray(iv0)
+        dec_state = bytearray(1)
+        plaintext = b""
+        for i in range(0, len(ciphertext), 65553):
+            plaintext += tgcrypto.ctr256_decrypt(
+                ciphertext[i : i + 65553], key, dec_iv, dec_state
+            )
+
+        self.assertEqual(plaintext, data)
+
+    def test_ctr_bytearray_mutates_iv_and_state_in_place(self) -> None:
+        data = self.data + b"xyz"  # 67 bytes, not block aligned
+        iv = bytearray(self.iv_cbc)
+        state = bytearray(1)
+
+        tgcrypto.ctr256_encrypt(data, self.key, iv, state)
+
+        self.assertEqual(state[0], len(data) % 16)
+        self.assertNotEqual(iv, bytearray(self.iv_cbc))
+
+    def test_ctr_bytes_do_not_mutate_iv_or_state(self) -> None:
+        data = self.data + b"xyz"  # 67 bytes, not block aligned
+        iv = self.iv_cbc
+        state = b"\x00"
+
+        ciphertext1 = tgcrypto.ctr256_encrypt(data, self.key, iv, state)
+        ciphertext2 = tgcrypto.ctr256_encrypt(data, self.key, iv, state)
+
+        self.assertEqual(iv, self.iv_cbc)
+        self.assertEqual(state, b"\x00")
+        self.assertEqual(ciphertext1, ciphertext2)
+
     def test_ige_stream_matches_one_shot(self) -> None:
         expected = tgcrypto.ige256_encrypt(self.data, self.key, self.iv_ige)
         stream = tgcrypto.Ige256(self.key, self.iv_ige)
@@ -87,6 +168,22 @@ class TgCryptoApiTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "State value must be in the range \\[0, 15\\]"):
             tgcrypto.ctr256_encrypt(self.data, self.key, self.iv_cbc, b"\x10")
+
+    def test_ctr_bytearray_validation_errors_are_explicit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Key must be exactly 32 bytes"):
+            tgcrypto.ctr256_encrypt(self.data, bytearray(31), self.iv_cbc, b"\x00")
+
+        with self.assertRaisesRegex(ValueError, "IV must be exactly 16 bytes"):
+            tgcrypto.ctr256_encrypt(self.data, self.key, bytearray(15), b"\x00")
+
+        with self.assertRaisesRegex(ValueError, "State value must be in the range \\[0, 15\\]"):
+            tgcrypto.ctr256_encrypt(self.data, self.key, self.iv_cbc, bytearray(b"\x10"))
+
+        with self.assertRaises(TypeError):
+            tgcrypto.ctr256_encrypt(self.data, "not bytes", self.iv_cbc, b"\x00")
+
+        with self.assertRaises(TypeError):
+            tgcrypto.ctr256_encrypt(self.data, self.key, "not bytes", b"\x00")
 
     def test_docstrings_are_available(self) -> None:
         self.assertIn("Encrypt bytes with AES-256-CTR", tgcrypto.ctr256_encrypt.__doc__)
