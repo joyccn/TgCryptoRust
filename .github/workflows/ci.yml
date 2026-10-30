@@ -47,13 +47,17 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust Toolchain (1.89)
-        uses: dtolnay/rust-toolchain@599c45df1a24c1c63ae1129a7e59f46654b8fb66 # 1.89.0
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable action
+        with:
+          toolchain: 1.89.0
 
       - name: Restore Cargo Cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Verify MSRV
-        run: cargo check --locked --all-targets --all-features
+        run: |
+          rustc --version | grep -Eq '^rustc 1\.89\.0 '
+          cargo check --locked --all-targets --all-features
 
   test:
     name: Test (${{ matrix.os }})
