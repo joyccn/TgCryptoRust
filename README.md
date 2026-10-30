@@ -220,6 +220,10 @@ hardware acceleration is active.
 See [security and protocol boundaries](SECURITY.md) before integrating these
 primitives. This package supplies AES modes, not a complete Telegram/TDLib client.
 
+See the [Python performance guide](docs/PYTHON.md) for choosing stream APIs and
+avoiding copies. Both Python import names ship type hints (`py.typed`) while
+continuing to call native functions directly.
+
 ## Migrating to 2.0
 
 The Python API and `tgcrypto` compatibility imports are retained. Minimum Rust is
@@ -284,6 +288,10 @@ uv build --wheel
 ## Changelog
 
 ### 2.0.0 (unreleased)
+
+- Ship precise Python type hints for both import names without runtime wrappers.
+- Remove small CTR key/IV/state heap snapshots and share the IGE encryption/
+  decryption schedule; retain mutable state exports and key zeroization.
 
 - Update PyO3 to 0.30.1, RustCrypto AES to 0.9.3, zeroize to 1.9.1, Maturin
   minimum to 1.16.0, and refresh transitive dependencies and CI actions.

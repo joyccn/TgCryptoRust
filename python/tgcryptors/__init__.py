@@ -1,4 +1,10 @@
-"""TgCryptoRust public Python API."""
+"""Native AES-256 operations and reusable CTR/IGE streams.
+
+Public names refer directly to the Rust extension, without Python forwarding
+functions. Reuse ``Ctr256`` or ``Ige256`` for chunks of one logical stream to
+avoid expanding its key for each call. Each independent stream needs its own
+key/IV state; never reuse a CTR keystream for different plaintext.
+"""
 
 from ._native import (  # noqa: F401
     Ctr256,

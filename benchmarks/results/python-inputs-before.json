@@ -1,0 +1,45 @@
+{
+  "unit": "microseconds_per_call",
+  "python": "3.14.8",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "runtime": {
+    "version": "2.0.0",
+    "crate_version": "2.0.0",
+    "implementation": "rust",
+    "aesni": true,
+    "hardware_accelerated": true,
+    "backend": "rustcrypto-hardware"
+  },
+  "rayon_num_threads": "4",
+  "repeats": 3,
+  "source_revision": "9627056c7451f4a5bea4c4319ba88ac519ac57bd",
+  "phase": "before fixed-array snapshots and shared IGE key",
+  "object_basicsize_bytes": {
+    "Ige256": 1984,
+    "Ctr256": 1024
+  },
+  "timings": {
+    "bytes/16": 0.329,
+    "mutable_key/16": 0.363,
+    "mutable_carry/16": 0.415,
+    "mutable_all/16": 0.493,
+    "bytes/64": 0.382,
+    "mutable_key/64": 0.43,
+    "mutable_carry/64": 0.417,
+    "mutable_all/64": 0.511,
+    "bytes/1024": 0.902,
+    "mutable_key/1024": 1.033,
+    "mutable_carry/1024": 1.208,
+    "mutable_all/1024": 1.428,
+    "bytes/16384": 10.148,
+    "mutable_key/16384": 10.759,
+    "mutable_carry/16384": 10.975,
+    "mutable_all/16384": 13.893,
+    "bytes/1048576": 454.664,
+    "mutable_key/1048576": 410.331,
+    "mutable_carry/1048576": 395.285,
+    "mutable_all/1048576": 1310.95,
+    "ige_construct": 0.636,
+    "ctr_construct": 0.426
+  }
+}

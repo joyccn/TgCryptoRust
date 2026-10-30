@@ -54,3 +54,19 @@ See [SECURITY.md](../SECURITY.md) for caller responsibilities and
 [PERFORMANCE.md](PERFORMANCE.md) for the reproducible measurements and their
 limits. Cross-platform runtime checks and the full Python CI matrix remain for
 GitHub CI; the local environment runs Linux x86_64 only.
+
+## Python API follow-up
+
+A subsequent review keeps the Python entry points as direct native objects and
+adds shipped PEP 561 stubs for both import names. CTR fixed-size key, IV, and
+state snapshots now use arrays rather than three small `Vec` allocations. The
+mutable key needs no retained export after copying; IV/state and mutable data
+keep their buffer leases. IGE reuses one opaque encryption/decryption schedule.
+
+The expanded Python suite has 27 tests and passes on separately installed
+Python 3.9 and 3.14 wheels, including all fixed-argument mutability combinations,
+residual offsets, invalid-input cleanup, subclasses, and an OpenSSL IGE vector.
+Both wheels and the source distribution contain the typing files. Strict Mypy
+checks pass for valid installed-package usage, and six invalid examples are
+rejected as expected. Clippy and the Rust 1.89 all-targets/all-features check also
+pass. See PYTHON.md and PERFORMANCE.md for usage and comparative measurements.

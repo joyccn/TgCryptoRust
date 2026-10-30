@@ -38,8 +38,7 @@ fn ensure_block_aligned(data: &[u8]) -> PyResult<()> {
 }
 
 /// Validate the single-byte CTR carry state.
-fn validate_ctr_state(state: &[u8]) -> PyResult<u8> {
-    let state = copy_array::<1>(state, "State")?[0];
+fn validate_ctr_state(state: u8) -> PyResult<u8> {
     if state > 15 {
         return Err(PyValueError::new_err(
             "State value must be in the range [0, 15]",
@@ -53,14 +52,13 @@ fn validate_ctr_state(state: &[u8]) -> PyResult<u8> {
 /// `bytes` is read zero-copy and treated as stateless input. `bytearray`
 /// contents are copied out up front, because the buffer may be mutated by
 /// Python code while the GIL is released during the operation; the original
-/// object is kept so mutated state can be written back afterwards (see
-/// [`BufferInput::into_source`]). A buffer export pins each mutable input
-/// against resizing until its snapshot and any state write-back are complete.
+/// object remains exported until processing completes. Fixed-size key and
+/// state arguments use stack snapshots instead (see [`copy_buffer_array`]).
 enum BufferInput<'py> {
     Bytes(Bound<'py, PyBytes>),
     ByteArray {
         data: Zeroizing<Vec<u8>>,
-        source: ByteArraySource<'py>,
+        _source: ByteArraySource<'py>,
     },
 }
 
@@ -71,10 +69,7 @@ impl<'py> BufferInput<'py> {
         }
         if let Ok(array) = ob.cast::<PyByteArray>() {
             return Ok(BufferInput::ByteArray {
-                source: ByteArraySource {
-                    array: array.clone(),
-                    _lease: PyBuffer::get(array.as_any())?,
-                },
+                _source: ByteArraySource::new(array)?,
                 data: Zeroizing::new(array.to_vec()),
             });
         }
@@ -89,14 +84,6 @@ impl<'py> BufferInput<'py> {
             BufferInput::ByteArray { data, .. } => data,
         }
     }
-
-    /// Take the underlying `bytearray` to write state back into, if any.
-    fn into_source(self) -> Option<ByteArraySource<'py>> {
-        match self {
-            BufferInput::Bytes(_) => None,
-            BufferInput::ByteArray { source, .. } => Some(source),
-        }
-    }
 }
 
 /// Keep the bytearray's buffer exported while native code runs without the GIL.
@@ -106,7 +93,18 @@ struct ByteArraySource<'py> {
     _lease: PyBuffer<u8>,
 }
 
-impl ByteArraySource<'_> {
+impl<'py> ByteArraySource<'py> {
+    fn new(array: &Bound<'py, PyByteArray>) -> PyResult<Self> {
+        Ok(Self {
+            array: array.clone(),
+            _lease: PyBuffer::get(array.as_any())?,
+        })
+    }
+
+    fn from_any(value: &Bound<'py, PyAny>) -> PyResult<Option<Self>> {
+        value.cast::<PyByteArray>().ok().map(Self::new).transpose()
+    }
+
     fn write_back(&self, value: &[u8]) -> PyResult<()> {
         with_critical_section(self.array.as_any(), || {
             // A real check also protects against unusual bytearray subclasses
@@ -122,6 +120,37 @@ impl ByteArraySource<'_> {
             Ok(())
         })
     }
+}
+
+/// Copy a small bytes/bytearray argument directly to a fixed-size stack array.
+///
+/// Mutable input is only borrowed inside its critical section, never across a
+/// Python call or GIL release. IV/state callers retain a separate buffer export
+/// until write-back. Key input needs no export after its owned snapshot exists.
+fn copy_buffer_array<const N: usize>(
+    value: &Bound<'_, PyAny>,
+    label: &str,
+) -> PyResult<Zeroizing<[u8; N]>> {
+    if let Ok(bytes) = value.cast::<PyBytes>() {
+        return copy_array(bytes.as_bytes(), label).map(Zeroizing::new);
+    }
+    if let Ok(array) = value.cast::<PyByteArray>() {
+        return with_critical_section(array.as_any(), || {
+            if array.len() != N {
+                return Err(PyValueError::new_err(format!(
+                    "{label} must be exactly {N} bytes"
+                )));
+            }
+            let mut snapshot = Zeroizing::new([0; N]);
+            // SAFETY: the bytearray is locked, its length was checked, and
+            // the borrowed slice is consumed without any Python interaction.
+            snapshot.copy_from_slice(unsafe { array.as_bytes() });
+            Ok(snapshot)
+        });
+    }
+    Err(PyTypeError::new_err(format!(
+        "{label} must be bytes or bytearray"
+    )))
 }
 
 /// Fill a fresh Python bytes allocation, keeping all raw allocation handling
@@ -244,7 +273,8 @@ fn ige256_decrypt<'py>(
 ///     offset, so passing the same objects to the next call continues the
 ///     keystream (TgCrypto-compatible, required by pyrogram and its forks).
 ///     `bytes` inputs are treated as stateless one-shot calls.
-///     Mutable buffers cannot be resized until the operation completes.
+///     Data and mutable IV/state cannot be resized until processing completes.
+///     Key input is copied immediately and may be resized after that snapshot.
 ///     Synchronize callers sharing mutable state; use separate `Ctr256`
 ///     objects for independent streams and never reuse a key/counter pair.
 ///
@@ -264,16 +294,15 @@ fn ctr256_encrypt<'py>(
     state: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
     let data = BufferInput::from_any(data, "Data")?;
-    let key = BufferInput::from_any(key, "Key")?;
-    let iv = BufferInput::from_any(iv, "IV")?;
-    let state = BufferInput::from_any(state, "State")?;
-
-    let key_arr = Zeroizing::new(copy_array::<32>(key.as_bytes(), "Key")?);
-    let mut iv_arr = copy_array::<16>(iv.as_bytes(), "IV")?;
-    let mut state_val = validate_ctr_state(state.as_bytes())?;
+    let key_arr = copy_buffer_array::<32>(key, "Key")?;
+    // Exports pin only state that will be written back. Small snapshots avoid
+    // allocating separate Vecs for the key, counter, and residual byte offset.
+    let iv_source = ByteArraySource::from_any(iv)?;
+    let mut iv_arr = copy_buffer_array::<16>(iv, "IV")?;
+    let state_source = ByteArraySource::from_any(state)?;
+    let state_arr = copy_buffer_array::<1>(state, "State")?;
+    let mut state_val = validate_ctr_state(state_arr[0])?;
     let data_slice = data.as_bytes();
-    let iv_source = iv.into_source();
-    let state_source = state.into_source();
 
     let (bytes, (next_iv, next_state)) = execute_zerocopy(py, data_slice.len(), move |dest| {
         tgcryptors_core::ctr256_encrypt_into(
@@ -287,7 +316,7 @@ fn ctr256_encrypt<'py>(
     })?;
 
     if let Some(source) = iv_source {
-        source.write_back(&next_iv)?;
+        source.write_back(&next_iv[..])?;
     }
     if let Some(source) = state_source {
         source.write_back(&[next_state])?;
@@ -463,8 +492,7 @@ impl Ctr256 {
 /// and reused for all subsequent operations.
 #[pyclass(module = "tgcryptors")]
 struct Ige256 {
-    enc_key: tgcryptors_core::ExpandedKey,
-    dec_key: tgcryptors_core::ExpandedKey,
+    key: tgcryptors_core::ExpandedKey,
     iv: [u8; 32],
 }
 
@@ -483,8 +511,8 @@ impl Ige256 {
         let key_arr = Zeroizing::new(copy_array::<32>(key, "Key")?);
         let iv_arr = copy_array::<32>(iv, "IV")?;
         Ok(Ige256 {
-            enc_key: tgcryptors_core::ExpandedKey::new_encrypt(&key_arr),
-            dec_key: tgcryptors_core::ExpandedKey::new_decrypt(&key_arr),
+            // RustCrypto's opaque AES key already holds both round schedules.
+            key: tgcryptors_core::ExpandedKey::new_encrypt(&key_arr),
             iv: iv_arr,
         })
     }
@@ -501,7 +529,7 @@ impl Ige256 {
     ///     ValueError: If `data` is not block-aligned.
     fn encrypt<'py>(&mut self, py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
         ensure_block_aligned(data)?;
-        let ek = &self.enc_key;
+        let ek = &self.key;
         let mut iv_arr = self.iv;
 
         let (res, next_iv) = execute_zerocopy(py, data.len(), move |dest| {
@@ -525,7 +553,7 @@ impl Ige256 {
     ///     ValueError: If `data` is not block-aligned.
     fn decrypt<'py>(&mut self, py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
         ensure_block_aligned(data)?;
-        let dk = &self.dec_key;
+        let dk = &self.key;
         let mut iv_arr = self.iv;
 
         let (res, next_iv) = execute_zerocopy(py, data.len(), move |dest| {

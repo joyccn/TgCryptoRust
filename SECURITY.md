@@ -18,8 +18,10 @@ The library cannot erase caller-owned Python `bytes`, all compiler/register
 copies, returned plaintext, swap, or crash dumps. Keep key lifetimes short and
 protect process memory in the application.
 
-Python `bytearray` arguments are snapshotted before native processing. Buffer
-exports prevent resizing until processing and CTR state write-back finish.
+Python `bytearray` arguments are snapshotted before native processing. Mutable
+IV/state and data retain buffer exports that prevent resizing during processing
+and CTR state write-back. Small key snapshots use fixed-size arrays; after a key
+has been copied, its caller-owned buffer need not remain exported.
 Do not share a stream object or mutable CTR IV/state between unsynchronized
 operations. Exports do not prevent another thread overwriting existing bytes.
 

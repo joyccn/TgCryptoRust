@@ -56,4 +56,8 @@ include = [
     { path = "LICENSE", format = "sdist" },
     { path = "python/tgcrypto/__init__.py", format = "wheel" },
     { path = "python/tgcryptors/__init__.py", format = "wheel" },
+    { path = "python/tgcryptors/*.pyi", format = ["sdist", "wheel"] },
+    { path = "python/tgcryptors/py.typed", format = ["sdist", "wheel"] },
+    { path = "python/tgcrypto/*.pyi", format = ["sdist", "wheel"] },
+    { path = "python/tgcrypto/py.typed", format = ["sdist", "wheel"] },
 ]
