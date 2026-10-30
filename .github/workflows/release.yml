@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check-version:
@@ -15,7 +15,7 @@ jobs:
       skip: ${{ steps.check_release.outputs.skip }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -53,6 +53,8 @@ jobs:
           fi
 
   create-release:
+    permissions:
+      contents: write
     name: Create GitHub Release
     needs: check-version
     if: needs.check-version.outputs.skip == 'false'
@@ -61,7 +63,7 @@ jobs:
       tag_name: ${{ steps.create_tag.outputs.tag }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -83,7 +85,7 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
           name: Release v${{ needs.check-version.outputs.version }}
@@ -103,24 +105,24 @@ jobs:
         python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Python ${{ matrix.python }}
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
 
       - name: Build Wheel
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
-          args: --release --out dist --interpreter python${{ matrix.python }}
+          args: --release --locked --out dist --interpreter python${{ matrix.python }}
           sccache: "true"
 
       - name: Upload Wheel as Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wheels-${{ matrix.os }}-py${{ matrix.python }}
           path: dist/*.whl
@@ -138,26 +140,26 @@ jobs:
         python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Python ${{ matrix.python }}
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
 
       - name: Build Wheel
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           command: build
-          args: --release --out dist --interpreter python${{ matrix.python }}
+          args: --release --locked --out dist --interpreter python${{ matrix.python }}
           sccache: "true"
           manylinux: auto
 
       - name: Upload Wheel as Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wheels-linux-${{ matrix.target }}-py${{ matrix.python }}
           path: dist/*.whl
@@ -170,18 +172,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Build SDist
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: sdist
           args: --out dist
 
       - name: Upload SDist as Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdist
           path: dist/*.tar.gz
@@ -196,7 +198,7 @@ jobs:
       contents: write
     steps:
       - name: Download All Artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
           merge-multiple: true
@@ -205,7 +207,7 @@ jobs:
         run: ls -lh dist/
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: v${{ needs.check-version.outputs.version }}
           files: dist/*

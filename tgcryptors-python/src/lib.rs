@@ -9,14 +9,14 @@
 //! - `cbc256_encrypt(data, key, iv) -> bytes`
 //! - `cbc256_decrypt(data, key, iv) -> bytes`
 
-use core::slice;
+use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
-use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::critical_section::with_critical_section;
 use pyo3::types::{PyAny, PyByteArray, PyBytes, PyDict};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use tgcryptors_core::AES_BLOCK_SIZE;
+use zeroize::Zeroizing;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -29,7 +29,7 @@ fn copy_array<const N: usize>(value: &[u8], label: &str) -> PyResult<[u8; N]> {
 
 /// Ensure block cipher input is aligned to the AES block size.
 fn ensure_block_aligned(data: &[u8]) -> PyResult<()> {
-    if data.len() % AES_BLOCK_SIZE != 0 {
+    if !data.len().is_multiple_of(AES_BLOCK_SIZE) {
         return Err(PyValueError::new_err(format!(
             "Data length must be a multiple of {AES_BLOCK_SIZE} bytes"
         )));
@@ -54,12 +54,13 @@ fn validate_ctr_state(state: &[u8]) -> PyResult<u8> {
 /// contents are copied out up front, because the buffer may be mutated by
 /// Python code while the GIL is released during the operation; the original
 /// object is kept so mutated state can be written back afterwards (see
-/// [`BufferInput::into_source`]).
+/// [`BufferInput::into_source`]). A buffer export pins each mutable input
+/// against resizing until its snapshot and any state write-back are complete.
 enum BufferInput<'py> {
     Bytes(Bound<'py, PyBytes>),
     ByteArray {
-        data: Vec<u8>,
-        source: Bound<'py, PyByteArray>,
+        data: Zeroizing<Vec<u8>>,
+        source: ByteArraySource<'py>,
     },
 }
 
@@ -70,8 +71,11 @@ impl<'py> BufferInput<'py> {
         }
         if let Ok(array) = ob.cast::<PyByteArray>() {
             return Ok(BufferInput::ByteArray {
-                data: array.to_vec(),
-                source: array.clone(),
+                source: ByteArraySource {
+                    array: array.clone(),
+                    _lease: PyBuffer::get(array.as_any())?,
+                },
+                data: Zeroizing::new(array.to_vec()),
             });
         }
         Err(PyTypeError::new_err(format!(
@@ -87,7 +91,7 @@ impl<'py> BufferInput<'py> {
     }
 
     /// Take the underlying `bytearray` to write state back into, if any.
-    fn into_source(self) -> Option<Bound<'py, PyByteArray>> {
+    fn into_source(self) -> Option<ByteArraySource<'py>> {
         match self {
             BufferInput::Bytes(_) => None,
             BufferInput::ByteArray { source, .. } => Some(source),
@@ -95,33 +99,33 @@ impl<'py> BufferInput<'py> {
     }
 }
 
-/// Overwrite the contents of a `bytearray` with `value`.
-///
-/// The buffer length is guaranteed to match `value` because extraction copied
-/// the exact same length and Python code cannot legally resize the object
-/// while this function holds it inside the critical section.
-fn write_back(byte_array: &Bound<'_, PyByteArray>, value: &[u8]) {
-    with_critical_section(byte_array.as_any(), || {
-        debug_assert_eq!(
-            byte_array.len(),
-            value.len(),
-            "write_back: bytearray length ({}) must match value length ({})",
-            byte_array.len(),
-            value.len()
-        );
-
-        // SAFETY: the critical section prevents concurrent mutation of the
-        // buffer, and the buffer was not resized since extraction; the
-        // lengths are asserted to match.
-        unsafe { byte_array.as_bytes_mut() }.copy_from_slice(value);
-    });
+/// Keep the bytearray's buffer exported while native code runs without the GIL.
+/// Python raises BufferError if another thread tries to resize it in that time.
+struct ByteArraySource<'py> {
+    array: Bound<'py, PyByteArray>,
+    _lease: PyBuffer<u8>,
 }
 
-/// Zero-copy PyBytes allocation with GIL release and panic isolation.
-///
-/// Allocates uninitialized Python bytes, releases the GIL,
-/// runs the cipher operation in-place, and returns the result plus
-/// any auxiliary state produced by the operation.
+impl ByteArraySource<'_> {
+    fn write_back(&self, value: &[u8]) -> PyResult<()> {
+        with_critical_section(self.array.as_any(), || {
+            // A real check also protects against unusual bytearray subclasses
+            // whose buffer exporter does not pin the underlying bytearray.
+            if self.array.len() != value.len() {
+                return Err(PyRuntimeError::new_err(
+                    "CTR state buffer was resized during cipher operation",
+                ));
+            }
+            // SAFETY: the critical section excludes concurrent mutation, and
+            // no Python code is called while the short-lived slice is used.
+            unsafe { self.array.as_bytes_mut() }.copy_from_slice(value);
+            Ok(())
+        })
+    }
+}
+
+/// Fill a fresh Python bytes allocation, keeping all raw allocation handling
+/// inside PyO3. Panic isolation prevents partial output from reaching Python.
 fn execute_zerocopy<'py, T, F>(
     py: Python<'py>,
     len: usize,
@@ -131,31 +135,30 @@ where
     T: Send,
     F: FnOnce(&mut [u8]) -> T + Send,
 {
-    let py_len: ffi::Py_ssize_t = len.try_into().map_err(|_| {
-        PyOverflowError::new_err("Data is too large to fit in a Python bytes object")
-    })?;
-
-    let obj_ptr = unsafe { ffi::PyBytes_FromStringAndSize(std::ptr::null(), py_len) };
-    let any = unsafe { Bound::from_owned_ptr_or_err(py, obj_ptr)? };
-    let dest_ptr = unsafe { ffi::PyBytes_AsString(any.as_ptr()) };
-    if dest_ptr.is_null() {
-        return Err(PyRuntimeError::new_err(
-            "Python bytes allocation succeeded but returned a null data pointer",
+    if len > isize::MAX as usize {
+        return Err(PyOverflowError::new_err(
+            "Data is too large to fit in a Python bytes object",
         ));
     }
-    let dest_addr = dest_ptr as usize;
 
-    let result = py.detach(move || {
-        // SAFETY: dest_ptr is valid for `len` bytes and exclusively owned.
-        let dest = unsafe { slice::from_raw_parts_mut(dest_addr as *mut u8, len) };
-        catch_unwind(AssertUnwindSafe(|| f(dest)))
-    });
-
-    let result = result.map_err(|_| {
-        PyRuntimeError::new_err("Unexpected internal failure while executing cipher operation")
+    let mut result = None;
+    let bytes = PyBytes::new_with(py, len, |dest| {
+        let operation = || catch_unwind(AssertUnwindSafe(|| f(dest)));
+        // Avoid the detach/reattach cost for small Telegram transport chunks.
+        // Large buffers still release the GIL for concurrency.
+        let output = if len >= 16 * 1024 {
+            py.detach(operation)
+        } else {
+            operation()
+        };
+        result = Some(output.map_err(|_| {
+            PyRuntimeError::new_err("Unexpected internal failure while executing cipher operation")
+        })?);
+        Ok(())
     })?;
 
-    let bytes: Bound<'py, PyBytes> = unsafe { any.cast_into_unchecked() };
+    let result = result
+        .ok_or_else(|| PyRuntimeError::new_err("Python bytes initializer did not execute"))?;
     Ok((bytes, result))
 }
 
@@ -182,7 +185,7 @@ fn ige256_encrypt<'py>(
     iv: &[u8],
 ) -> PyResult<Bound<'py, PyBytes>> {
     ensure_block_aligned(data)?;
-    let key_arr = copy_array::<32>(key, "Key")?;
+    let key_arr = Zeroizing::new(copy_array::<32>(key, "Key")?);
     let mut iv_arr = copy_array::<32>(iv, "IV")?;
 
     let (bytes, _) = execute_zerocopy(py, data.len(), move |dest| {
@@ -214,7 +217,7 @@ fn ige256_decrypt<'py>(
     iv: &[u8],
 ) -> PyResult<Bound<'py, PyBytes>> {
     ensure_block_aligned(data)?;
-    let key_arr = copy_array::<32>(key, "Key")?;
+    let key_arr = Zeroizing::new(copy_array::<32>(key, "Key")?);
     let mut iv_arr = copy_array::<32>(iv, "IV")?;
 
     let (bytes, _) = execute_zerocopy(py, data.len(), move |dest| {
@@ -241,6 +244,9 @@ fn ige256_decrypt<'py>(
 ///     offset, so passing the same objects to the next call continues the
 ///     keystream (TgCrypto-compatible, required by pyrogram and its forks).
 ///     `bytes` inputs are treated as stateless one-shot calls.
+///     Mutable buffers cannot be resized until the operation completes.
+///     Synchronize callers sharing mutable state; use separate `Ctr256`
+///     objects for independent streams and never reuse a key/counter pair.
 ///
 /// Raises:
 ///     TypeError: If `data`, `key`, `iv`, or `state` are not `bytes` or
@@ -262,7 +268,7 @@ fn ctr256_encrypt<'py>(
     let iv = BufferInput::from_any(iv, "IV")?;
     let state = BufferInput::from_any(state, "State")?;
 
-    let key_arr = copy_array::<32>(key.as_bytes(), "Key")?;
+    let key_arr = Zeroizing::new(copy_array::<32>(key.as_bytes(), "Key")?);
     let mut iv_arr = copy_array::<16>(iv.as_bytes(), "IV")?;
     let mut state_val = validate_ctr_state(state.as_bytes())?;
     let data_slice = data.as_bytes();
@@ -281,10 +287,10 @@ fn ctr256_encrypt<'py>(
     })?;
 
     if let Some(source) = iv_source {
-        write_back(&source, &next_iv);
+        source.write_back(&next_iv)?;
     }
     if let Some(source) = state_source {
-        write_back(&source, &[next_state]);
+        source.write_back(&[next_state])?;
     }
 
     Ok(bytes)
@@ -330,7 +336,7 @@ fn cbc256_encrypt<'py>(
     iv: &[u8],
 ) -> PyResult<Bound<'py, PyBytes>> {
     ensure_block_aligned(data)?;
-    let key_arr = copy_array::<32>(key, "Key")?;
+    let key_arr = Zeroizing::new(copy_array::<32>(key, "Key")?);
     let mut iv_arr = copy_array::<16>(iv, "IV")?;
 
     let (bytes, _) = execute_zerocopy(py, data.len(), move |dest| {
@@ -362,7 +368,7 @@ fn cbc256_decrypt<'py>(
     iv: &[u8],
 ) -> PyResult<Bound<'py, PyBytes>> {
     ensure_block_aligned(data)?;
-    let key_arr = copy_array::<32>(key, "Key")?;
+    let key_arr = Zeroizing::new(copy_array::<32>(key, "Key")?);
     let mut iv_arr = copy_array::<16>(iv, "IV")?;
 
     let (bytes, _) = execute_zerocopy(py, data.len(), move |dest| {
@@ -378,7 +384,13 @@ fn runtime_info(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     info.set_item("version", VERSION)?;
     info.set_item("crate_version", VERSION)?;
     info.set_item("implementation", "rust")?;
-    info.set_item("aesni", tgcryptors_core::AESNI_FEATURE_ENABLED)?;
+    let hardware = tgcryptors_core::aes256::hardware_accelerated();
+    info.set_item(
+        "aesni",
+        hardware && cfg!(any(target_arch = "x86", target_arch = "x86_64")),
+    )?;
+    info.set_item("hardware_accelerated", hardware)?;
+    info.set_item("backend", tgcryptors_core::aes256::backend_name())?;
     Ok(info)
 }
 
@@ -407,7 +419,7 @@ impl Ctr256 {
     ///     ValueError: If `key` or `iv` have invalid lengths.
     #[new]
     fn new(key: &[u8], iv: &[u8]) -> PyResult<Self> {
-        let key_arr = copy_array::<32>(key, "Key")?;
+        let key_arr = Zeroizing::new(copy_array::<32>(key, "Key")?);
         let iv_arr = copy_array::<16>(iv, "IV")?;
         Ok(Ctr256 {
             ek: tgcryptors_core::ExpandedKey::new_encrypt(&key_arr),
@@ -468,7 +480,7 @@ impl Ige256 {
     ///     ValueError: If `key` or `iv` have invalid lengths.
     #[new]
     fn new(key: &[u8], iv: &[u8]) -> PyResult<Self> {
-        let key_arr = copy_array::<32>(key, "Key")?;
+        let key_arr = Zeroizing::new(copy_array::<32>(key, "Key")?);
         let iv_arr = copy_array::<32>(iv, "IV")?;
         Ok(Ige256 {
             enc_key: tgcryptors_core::ExpandedKey::new_encrypt(&key_arr),

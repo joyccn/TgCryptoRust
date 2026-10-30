@@ -8,9 +8,9 @@ description = "High-performance Telegram cryptography library in Rust"
 
 [features]
 default = ["aesni"]
-## Enable AES-NI hardware acceleration on x86/x86_64 (runtime detected).
+## Compatibility flag; RustCrypto selects hardware acceleration at runtime.
 aesni = []
-## Reserved for future ARM NEON acceleration (not yet implemented).
+## Compatibility flag; ARM AES acceleration is selected automatically.
 neon = []
 
 [dev-dependencies]
@@ -22,4 +22,5 @@ harness = false
 
 [dependencies]
 rayon = "1.12.0"
-zeroize = { version = "1.8", features = ["derive"] }
+zeroize = "1.9.1"
+aes = { version = "0.9.3", features = ["zeroize"] }

@@ -23,37 +23,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust Toolchain (stable + clippy + rustfmt)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy, rustfmt
 
       - name: Restore Cargo Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Check Formatting
         run: cargo fmt --all -- --check
 
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
   msrv:
-    name: MSRV Check (rust 1.86)
+    name: MSRV Check (rust 1.89)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Rust Toolchain (1.86)
-        uses: dtolnay/rust-toolchain@1.86.0
+      - name: Install Rust Toolchain (1.89)
+        uses: dtolnay/rust-toolchain@599c45df1a24c1c63ae1129a7e59f46654b8fb66 # 1.89.0
 
       - name: Restore Cargo Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Verify MSRV
-        run: cargo check --all-targets --all-features
+        run: cargo check --locked --all-targets --all-features
 
   test:
     name: Test (${{ matrix.os }})
@@ -64,16 +64,36 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust Toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Restore Cargo Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Run Rust Tests
-        run: cargo test -p tgcryptors-core --release
+        run: cargo test -p tgcryptors-core --release --locked
+
+  software:
+    name: Constant-time software AES
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: '--cfg aes_backend="soft"'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - name: Restore Cargo Cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: software-aes
+
+      - name: Run Rust Tests with Software Backend
+        run: cargo test -p tgcryptors-core --release --locked
 
   python:
     name: Python ${{ matrix.python }} (${{ matrix.os }})
@@ -86,16 +106,16 @@ jobs:
         python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust Toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Restore Cargo Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Setup Python ${{ matrix.python }}
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
 
@@ -104,7 +124,7 @@ jobs:
 
       - name: Build Wheel & Smoke Test
         run: |
-          maturin build --release
+          maturin build --release --locked
           pip install target/wheels/*.whl
           python - <<'PY'
           import tgcrypto

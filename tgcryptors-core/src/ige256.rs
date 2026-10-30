@@ -2,11 +2,8 @@
 //!
 //! Telegram uses this mode for MTProto v2.0 message encryption.
 //!
-//! # Side-channel notice
-//!
-//! On platforms without AES-NI (e.g. ARM without NEON), the software fallback
-//! uses T-table lookups that are theoretically vulnerable to cache-timing
-//! attacks. Production deployments on such platforms should evaluate the risk.
+//! AES uses runtime hardware dispatch or constant-time software via RustCrypto.
+//! IGE itself does not authenticate messages; see the crate-level security notice.
 
 use crate::aes256::{self, ExpandedKey, AES_BLOCK_SIZE};
 
@@ -33,7 +30,7 @@ pub fn ige256_encrypt_into_ek(data: &[u8], ek: &ExpandedKey, iv: &mut [u8; 32], 
         return;
     }
     assert!(
-        len % AES_BLOCK_SIZE == 0,
+        len.is_multiple_of(AES_BLOCK_SIZE),
         "Data length must be a multiple of {AES_BLOCK_SIZE} bytes, got {len}",
     );
 
@@ -85,7 +82,7 @@ pub fn ige256_decrypt_into_ek(data: &[u8], dk: &ExpandedKey, iv: &mut [u8; 32], 
         return;
     }
     assert!(
-        len % AES_BLOCK_SIZE == 0,
+        len.is_multiple_of(AES_BLOCK_SIZE),
         "Data length must be a multiple of {AES_BLOCK_SIZE} bytes, got {len}",
     );
 

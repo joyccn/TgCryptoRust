@@ -178,7 +178,23 @@ fn ctr256_encrypt_internal(
         }
     }
 
-    // Batch four counter blocks to reuse the x4 AES primitive.
+    // Eight independent blocks fill the hardware backend's parallel lanes.
+    // Keep the x4 path below for shorter tails.
+    while i + 128 <= len {
+        let mut ivs = [0u8; 128];
+        for counter in ivs.as_chunks_mut::<AES_BLOCK_SIZE>().0 {
+            counter.copy_from_slice(iv);
+            increment_counter(iv);
+        }
+        let mut keystream = [0u8; 128];
+        aes256::encrypt_block_x8(&ivs, &mut keystream, ek);
+        for j in 0..128 {
+            dest[i + j] = data[i + j] ^ keystream[j];
+        }
+        i += 128;
+    }
+
+    // Batch four counter blocks for a shorter tail.
     while i + 64 <= len {
         let mut ivs = [0u8; 64];
 

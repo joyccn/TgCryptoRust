@@ -1,10 +1,10 @@
 [build-system]
-requires = ["maturin>=1.13.3"]
+requires = ["maturin>=1.16.0"]
 build-backend = "maturin"
 
 [project]
 name = "TgCryptoRust"
-version = "1.3.1"
+version = "2.0.0"
 description = "Rust-powered drop-in replacement for TgCrypto"
 readme = "README.md"
 requires-python = ">=3.9,<3.15"

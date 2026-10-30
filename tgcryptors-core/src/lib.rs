@@ -5,22 +5,24 @@
 //! - `ctr256` for CDN file encryption
 //! - `cbc256` for passport credentials
 //!
-//! On x86 and x86_64, the `aesni` feature enables runtime AES-NI dispatch.
-//! Other targets use the software fallback.
+//! RustCrypto AES selects hardware acceleration at runtime on supported x86
+//! and ARM CPUs, with a constant-time fixsliced software fallback. Both key
+//! expansion and block processing avoid secret-indexed table lookups.
 //!
 //! # Security Notice
 //!
-//! The software fallback uses table lookups, which are not constant-time on
-//! all CPUs. If hardware AES acceleration is unavailable, evaluate that risk
-//! against your deployment model. The `neon` feature flag is reserved for a
-//! future ARM implementation and is not active yet.
+//! These are unauthenticated cipher primitives, not a complete MTProto client.
+//! Callers must implement the protocol's key derivation, message authentication,
+//! padding, replay checks, and unique CTR key/counter management.
+//! The legacy `aesni` and `neon` features remain compatibility flags; backend
+//! selection is automatic. Use `aes256::hardware_accelerated()` for runtime status.
 
 pub mod aes256;
 pub mod cbc256;
 pub mod ctr256;
 pub mod ige256;
 
-/// Whether the crate was compiled with the AES-NI feature enabled.
+/// Whether the legacy compatibility feature was enabled (not CPU/backend status).
 pub const AESNI_FEATURE_ENABLED: bool = cfg!(feature = "aesni");
 
 /// AES block size in bytes (16).

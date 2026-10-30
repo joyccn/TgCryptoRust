@@ -20,7 +20,7 @@ pub fn cbc256_encrypt_into(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], dest:
         return;
     }
     assert!(
-        len % AES_BLOCK_SIZE == 0,
+        len.is_multiple_of(AES_BLOCK_SIZE),
         "Data length must be a multiple of {AES_BLOCK_SIZE} bytes, got {len}",
     );
 
@@ -54,7 +54,7 @@ pub fn cbc256_decrypt_into(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], dest:
         return;
     }
     assert!(
-        len % AES_BLOCK_SIZE == 0,
+        len.is_multiple_of(AES_BLOCK_SIZE),
         "Data length must be a multiple of {AES_BLOCK_SIZE} bytes, got {len}",
     );
 
@@ -102,6 +102,23 @@ fn cbc256_decrypt_internal(
     let mut i = 0;
 
     let mut prev_c = *initial_iv;
+
+    // Feed eight independent ciphertext blocks to the backend together;
+    // four-block batches otherwise use its scalar tail path on AES-NI.
+    while i + 128 <= len {
+        let mut cipher_blocks = [0u8; 128];
+        cipher_blocks.copy_from_slice(&data[i..i + 128]);
+        let mut plain_blocks = [0u8; 128];
+        aes256::decrypt_block_x8(&cipher_blocks, &mut plain_blocks, dk);
+        for j in 0..16 {
+            dest[i + j] = plain_blocks[j] ^ prev_c[j];
+        }
+        for j in 16..128 {
+            dest[i + j] = plain_blocks[j] ^ cipher_blocks[j - 16];
+        }
+        prev_c.copy_from_slice(&cipher_blocks[112..128]);
+        i += 128;
+    }
 
     while i + 64 <= len {
         let mut cipher_blocks = [0u8; 64];

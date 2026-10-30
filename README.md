@@ -11,7 +11,7 @@ Rust-powered, AES-NI accelerated cryptography for Telegram clients.
 [![CI](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml/badge.svg)](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.9--3.14-brightgreen)
-![Rust](https://img.shields.io/badge/rust-1.86%2B-orange)
+![Rust](https://img.shields.io/badge/rust-1.89%2B-orange)
 
 **TgCryptoRust** is a drop-in replacement for [TgCrypto](https://github.com/pyrogram/tgcrypto),
 implemented in Rust and packaged for Python through PyO3 and Maturin.
@@ -24,7 +24,7 @@ It implements the cryptographic algorithms Telegram requires, namely:
 ## Requirements
 
 - Python 3.9 through 3.14
-- Rust 1.86+ (only when building from source)
+- Rust 1.89+ (only when building from source)
 
 Prebuilt wheels are available for common desktop and server platforms.
 Rust is only required when a wheel is not available for your platform.
@@ -211,12 +211,37 @@ return types, and validation behavior match the original TgCrypto:
 - **`python/tgcrypto`** — Compatibility shim re-exporting `tgcryptors` for existing imports.
 - **`tests/`** — Python unit tests covering the public API.
 
-On x86 and x86_64, AES-NI is detected at runtime when the crate is built with
-the default `aesni` feature. Other targets use a software fallback (T-table based,
-not guaranteed constant-time on every CPU).
+RustCrypto AES selects AES-NI on supported x86 CPUs and ARM AES instructions on
+supported ARM CPUs at runtime. Other platforms use a constant-time fixsliced
+software implementation, including during key expansion. Expanded keys are
+zeroized on drop. `runtime_info()` reports the selected backend and whether
+hardware acceleration is active.
 
-Expanded key material is zeroized on drop using the [`zeroize`](https://crates.io/crates/zeroize)
-crate, which guarantees the compiler will not optimize away the clearing.
+See [security and protocol boundaries](SECURITY.md) before integrating these
+primitives. This package supplies AES modes, not a complete Telegram/TDLib client.
+
+## Migrating to 2.0
+
+The Python API and `tgcrypto` compatibility imports are retained. Minimum Rust is
+now 1.89, required by the updated AES dependency. Rust callers must migrate from
+raw schedules (`ExpandedKey.words`, `set_encryption_key`, `set_decryption_key`,
+`encrypt_block_soft`, `decrypt_block_soft`, and the `ExpandedKey` `Zeroize` trait)
+to `ExpandedKey::new_encrypt` / `new_decrypt` and the block or mode APIs. Key
+schedules remain zeroized automatically when dropped.
+
+The Cargo `aesni` and `neon` features remain accepted as compatibility flags;
+hardware selection is automatic even with `--no-default-features`. To exercise
+the software implementation explicitly:
+
+```bash
+RUSTFLAGS='--cfg aes_backend="soft"' cargo test -p tgcryptors-core --release --locked
+```
+
+`runtime_info()["aesni"]` now reflects active x86 hardware acceleration rather
+than a compile-time feature. The new `hardware_accelerated` and `backend` keys
+also cover ARM and forced software builds. Mutable CTR buffers are exported for
+the duration of an operation: resizing them concurrently raises `BufferError`.
+Synchronize callers that share mutable IV/state objects.
 
 ## Migrating From TgrCrypto
 
@@ -233,10 +258,10 @@ Existing code that imports `tgcrypto` can remain unchanged.
 
 ```bash
 # Set up environment
-uv sync --python 3.14
+uv sync --frozen --python 3.14
 
 # Build and install the native module
-uv run maturin develop --release
+uv run --with "maturin[patchelf]==1.16.0" maturin develop --release --locked
 
 # Run Python tests
 .venv/bin/python -m unittest discover -s tests -v
@@ -246,8 +271,8 @@ Run the Rust checks:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --release
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test -p tgcryptors-core --release --locked
 ```
 
 Build a wheel:
@@ -257,6 +282,20 @@ uv build --wheel
 ```
 
 ## Changelog
+
+### 2.0.0 (unreleased)
+
+- Update PyO3 to 0.30.1, RustCrypto AES to 0.9.3, zeroize to 1.9.1, Maturin
+  minimum to 1.16.0, and refresh transitive dependencies and CI actions.
+- Replace secret-indexed AES tables and key expansion with hardware AES or
+  constant-time software AES; keep backend schedules private and zeroize on drop.
+- Pin mutable Python buffers during native calls, use PyO3's safe bytes
+  allocator, and zeroize owned temporary key/mutable-input copies.
+- Avoid GIL release overhead for inputs smaller than 16 KiB; add representative
+  transport-size and preexpanded-key benchmarks.
+- Add independent NIST/OpenSSL vectors, CTR counter/chunk boundary tests, and
+  Python concurrency/ownership regression coverage; test software AES in CI.
+
 
 ### 1.3.1
 
