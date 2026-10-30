@@ -1,5 +1,8 @@
 # Security and Telegram compatibility
 
+This policy describes the 2.0.x implementation. Report suspected vulnerabilities
+in any version privately; use 2.0.x for the fixes described below.
+
 TgCryptoRust provides AES-256 block primitives and IGE, CTR, and CBC modes. It
 does not implement MTProto sessions, key exchange, TL schemas, or TDLib's API.
 Adding schema constructors would not authenticate ciphertext or make these
@@ -7,7 +10,7 @@ primitives a complete Telegram client.
 
 ## Implementation
 
-Version 2.0 replaces the custom secret-indexed AES S-box key expansion and
+Version 2.0.0 replaces the custom secret-indexed AES S-box key expansion and
 software T tables with RustCrypto AES. The dependency selects hardware AES on
 supported CPUs or its constant-time fixsliced software implementation. This
 removes those table-based cache-timing paths; it is not a formal security audit
@@ -51,7 +54,8 @@ Reference specifications and implementation:
 
 Tests cover published AES/CBC/CTR known-answer vectors, an independently generated
 OpenSSL AES-256-IGE vector, streaming boundaries, counter carries, parallel chunk
-boundaries, and mutable Python buffer ownership. Passing them establishes these
+boundaries, and mutable Python buffer ownership. The Python suite has 27 tests and the Rust
+core has 21 unit tests plus 5 mode integration tests. Passing them establishes these
 specific behaviors, not complete MTProto or TDLib interoperability.
 
 ## Reporting
@@ -59,3 +63,12 @@ specific behaviors, not complete MTProto or TDLib interoperability.
 Report suspected vulnerabilities privately through GitHub's repository security
 advisories when available. Avoid publishing keys, tokens, or exploitable details
 in a public issue before maintainers can assess the report.
+
+## Release integrity
+
+Release artifacts are built from a version-matched tag after CI checks. The
+release workflow publishes the tested artifact set; PyPI uses GitHub trusted
+publishing rather than a package token stored in this repository. Keep TLS,
+package signature/checksum checks, and platform protections enabled when
+installing. A clean dependency advisory scan does not replace reviewing the
+cipher modes and their integration with a complete Telegram client.

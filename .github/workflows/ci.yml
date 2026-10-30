@@ -6,6 +6,7 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -28,6 +29,7 @@ jobs:
       - name: Install Rust Toolchain (stable + clippy + rustfmt)
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           components: clippy, rustfmt
 
       - name: Restore Cargo Cache
@@ -72,6 +74,8 @@ jobs:
 
       - name: Install Rust Toolchain (stable)
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
 
       - name: Restore Cargo Cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -90,6 +94,8 @@ jobs:
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
 
       - name: Restore Cargo Cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -114,6 +120,8 @@ jobs:
 
       - name: Install Rust Toolchain (stable)
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
 
       - name: Restore Cargo Cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -124,16 +132,22 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Install maturin
-        run: pip install "maturin[patchelf]"
+        run: python -m pip install "maturin[patchelf]==1.16.0"
 
       - name: Build Wheel & Smoke Test
         run: |
-          maturin build --release --locked
-          pip install target/wheels/*.whl
+          python -m maturin build --release --locked --interpreter python
+          python -m pip install target/wheels/*.whl
           python - <<'PY'
+          from pathlib import Path
           import tgcrypto
           import tgcryptors
 
+          for package in (tgcrypto, tgcryptors):
+              package_dir = Path(package.__file__).parent
+              assert (package_dir / "__init__.pyi").is_file(), package.__name__
+              assert (package_dir / "py.typed").is_file(), package.__name__
+          assert (Path(tgcryptors.__file__).parent / "_native.pyi").is_file()
           data = b"TgCryptoRust wheel smoke test"
           key = bytes(range(32))
           iv = bytes(range(16))

@@ -6,14 +6,14 @@
 > vectors, but it has not received a formal third-party security audit. Do not
 > treat it as a certified cryptographic module.
 
-Rust-powered, AES-NI accelerated cryptography for Telegram clients.
+Rust-powered AES-256 primitives and streaming modes for Telegram clients.
 
 [![CI](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml/badge.svg)](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Python](https://img.shields.io/badge/python-3.9--3.14-brightgreen)
 ![Rust](https://img.shields.io/badge/rust-1.89%2B-orange)
 
-**TgCryptoRust** is a drop-in replacement for [TgCrypto](https://github.com/pyrogram/tgcrypto),
+**TgCryptoRust** provides a compatible Python API for [TgCrypto](https://github.com/pyrogram/tgcrypto),
 implemented in Rust and packaged for Python through PyO3 and Maturin.
 It implements the cryptographic algorithms Telegram requires, namely:
 
@@ -26,8 +26,9 @@ It implements the cryptographic algorithms Telegram requires, namely:
 - Python 3.9 through 3.14
 - Rust 1.89+ (only when building from source)
 
-Prebuilt wheels are available for common desktop and server platforms.
-Rust is only required when a wheel is not available for your platform.
+The release workflows build wheels for common desktop and server platforms.
+When no compatible published wheel is available, installation builds from source
+and requires Rust. Installing from a source checkout also requires Rust.
 
 ## Installation
 
@@ -45,15 +46,25 @@ uv sync
 ## API
 
 ```python
+from typing import Union
+
+CtrInput = Union[bytes, bytearray]
+
 def ige256_encrypt(data: bytes, key: bytes, iv: bytes) -> bytes: ...
 def ige256_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes: ...
 
-def ctr256_encrypt(data: bytes, key: bytes, iv: bytes, state: bytes) -> bytes: ...
-def ctr256_decrypt(data: bytes, key: bytes, iv: bytes, state: bytes) -> bytes: ...
+def ctr256_encrypt(data: CtrInput, key: CtrInput, iv: CtrInput, state: CtrInput) -> bytes: ...
+def ctr256_decrypt(data: CtrInput, key: CtrInput, iv: CtrInput, state: CtrInput) -> bytes: ...
 
 def cbc256_encrypt(data: bytes, key: bytes, iv: bytes) -> bytes: ...
 def cbc256_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes: ...
 ```
+
+All keys are exactly 32 bytes. IGE uses a 32-byte IV; CTR and CBC use a
+16-byte IV. CTR `state` is exactly one byte with a value from 0 through 15.
+IGE/CBC input must be block aligned; the library does not add or remove padding.
+Empty input is accepted. IGE/CBC functions and streaming methods accept immutable
+`bytes`; CTR functions additionally accept `bytearray` as shown below.
 
 ## Usage
 
@@ -109,6 +120,7 @@ import tgcrypto
 key = os.urandom(32)
 iv = bytearray(os.urandom(16))
 state = bytearray(1)
+data = os.urandom(1000)
 
 first = tgcrypto.ctr256_encrypt(data[:100], key, iv, state)   # iv/state advance in place
 second = tgcrypto.ctr256_encrypt(data[100:], key, iv, state)   # continues the stream
@@ -149,6 +161,10 @@ data = os.urandom(1024)
 
 stream = tgcryptors.Ctr256(key, iv)
 encrypted = stream.update(data[:300]) + stream.update(data[300:])
+
+# Decryption starts with its own counter and byte offset.
+decoder = tgcryptors.Ctr256(key, iv)
+assert decoder.update(encrypted) == data
 ```
 
 IGE streaming is also available for block-aligned chunks:
@@ -163,7 +179,14 @@ data = os.urandom(1024)
 
 stream = tgcrypto.Ige256(key, iv)
 encrypted = stream.encrypt(data[:512]) + stream.encrypt(data[512:])
+
+decoder = tgcrypto.Ige256(key, iv)
+assert decoder.decrypt(encrypted) == data
 ```
+
+Use a separate object for each logical stream and direction. Reuse a stream's
+key schedule only for subsequent chunks of that stream; never reuse a CTR
+keystream for unrelated plaintext.
 
 ### Runtime Metadata
 
@@ -192,8 +215,8 @@ Both modules expose the same API.
 
 ## Compatibility
 
-TgCryptoRust is a full drop-in replacement. All function names, argument orders,
-return types, and validation behavior match the original TgCrypto:
+The compatibility package preserves TgCrypto's six function names, argument
+order, `bytes` return values, and mutable CTR carry semantics:
 
 | Function | Arguments |
 |----------|-----------|
@@ -203,6 +226,11 @@ return types, and validation behavior match the original TgCrypto:
 | `ctr256_decrypt` | `(data, key, iv, state)` |
 | `cbc256_encrypt` | `(data, key, iv)` |
 | `cbc256_decrypt` | `(data, key, iv)` |
+
+`Ctr256`, `Ige256`, and `runtime_info` extend that API. Compatibility tests cover
+the documented inputs and state behavior; they do not establish complete
+interoperability with every Telegram client or TDLib session. Both import names
+ship the same native objects and type information.
 
 ## Architecture
 
@@ -243,9 +271,10 @@ RUSTFLAGS='--cfg aes_backend="soft"' cargo test -p tgcryptors-core --release --l
 
 `runtime_info()["aesni"]` now reflects active x86 hardware acceleration rather
 than a compile-time feature. The new `hardware_accelerated` and `backend` keys
-also cover ARM and forced software builds. Mutable CTR buffers are exported for
-the duration of an operation: resizing them concurrently raises `BufferError`.
-Synchronize callers that share mutable IV/state objects.
+also cover ARM and forced software builds. Mutable CTR data and IV/state buffers
+remain exported through processing and state write-back: resizing those buffers
+concurrently raises `BufferError`. The key is snapshotted immediately and does
+not need an export afterward. Synchronize callers sharing mutable IV/state.
 
 ## Migrating From TgrCrypto
 
@@ -271,6 +300,9 @@ uv run --with "maturin[patchelf]==1.16.0" maturin develop --release --locked
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
+The Python suite currently contains 27 tests covering the API, streaming,
+mutable buffers, validation, package exports, and performance-sensitive paths.
+
 Run the Rust checks:
 
 ```bash
@@ -287,12 +319,11 @@ uv build --wheel
 
 ## Changelog
 
-### 2.0.0 (unreleased)
+### 2.0.0
 
 - Ship precise Python type hints for both import names without runtime wrappers.
 - Remove small CTR key/IV/state heap snapshots and share the IGE encryption/
   decryption schedule; retain mutable state exports and key zeroization.
-
 - Update PyO3 to 0.30.1, RustCrypto AES to 0.9.3, zeroize to 1.9.1, Maturin
   minimum to 1.16.0, and refresh transitive dependencies and CI actions.
 - Replace secret-indexed AES tables and key expansion with hardware AES or
@@ -304,6 +335,8 @@ uv build --wheel
 - Add independent NIST/OpenSSL vectors, CTR counter/chunk boundary tests, and
   Python concurrency/ownership regression coverage; test software AES in CI.
 
+See the [release notes](CHANGELOG.md) for release details and the
+[validation review](docs/AUDIT.md) for the scope of the checks.
 
 ### 1.3.1
 

@@ -1,6 +1,6 @@
 # Performance measurements
 
-The 2.0.0 release uses RustCrypto AES and batches eight independent blocks for
+TgCryptoRust 2.0.0 uses RustCrypto AES and batches eight independent blocks for
 CTR and CBC decryption. This fills the backend's AES-NI parallel lanes; the
 four-block remainder remains available for shorter inputs. Short Python calls
 also avoid releasing and reacquiring the GIL below 16 KiB. Safety checks, output
@@ -24,7 +24,7 @@ workload. Output allocation and the Python/native call are included; the
 To measure Rust without the Python boundary:
 
 ```sh
-cargo bench -p tgcryptors-core --bench benchmark
+cargo bench -p tgcryptors-core --bench benchmark --locked
 ```
 
 The `preexpanded` group reuses a key and output buffer. Other groups include key
@@ -87,7 +87,9 @@ RAYON_NUM_THREADS=4 .venv/bin/python benchmarks/benchmark_python_inputs.py --out
 
 Both samples use CPython 3.14.8 and four Rayon threads on the same machine. The
 baseline precedes these binding changes, after the original 2.0.0 AES changes;
-the package version remains 2.0.0 because the release is still unpublished.
+both were development builds reporting version 2.0.0 before publication.
+The JSON phase and source revision distinguish them; the version string alone
+does not.
 
 | Operation | Before (µs) | After (µs) | Time change |
 | --- | ---: | ---: | ---: |

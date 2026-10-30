@@ -1,10 +1,11 @@
 # Dependency and implementation review
 
-This review prepares an unreleased 2.0.0 change on top of
-`bc33cf603f7742337d53ae125602a1836e8dc51e`. It includes the dependency update
-requested in PR #9 (PyO3 0.30.1), but does not establish that the GitHub PR has
-been merged. It is an implementation review with targeted tests, not an
-independent cryptographic certification or a claim that every bug was found.
+This review covers TgCryptoRust 2.0.0, developed from
+`bc33cf603f7742337d53ae125602a1836e8dc51e` and including the Python binding
+follow-up. It is an implementation review with targeted tests, not an independent
+cryptographic certification or a claim that every bug was found. Release
+publication and CI outcomes are recorded by GitHub Actions; this document
+separates local evidence from that cross-platform validation.
 
 ## Findings addressed
 
@@ -18,6 +19,7 @@ independent cryptographic certification or a claim that every bug was found.
 | New backend's four-block batches missed its eight-block AES-NI processing path | Add eight-block CTR/CBC-decryption loops and keep shorter tails | Independent mode vectors and chunk/counter-boundary tests; measured comparisons in PERFORMANCE.md |
 | Dependabot requested nonexistent labels and omitted GitHub Actions | Remove invalid label requirements; add action update checks | Configuration inspection and workflow validation |
 | CI dependencies used movable action tags | Pin verified release commits and retain version comments; reduce token permissions | Actionlint and YAML validation |
+| PR #10 changed the MSRV action to a commit whose default toolchain is stable | Accept the updated action and explicitly request `toolchain: 1.89.0`; assert the installed compiler version | Local Rust 1.89 check and the MSRV CI job |
 
 ## Dependency refresh
 
@@ -29,14 +31,14 @@ it does not force incompatible transitive major versions. Lockfiles are saved.
 
 AES 0.9.3 requires Rust 1.89. The Rust raw-schedule API removal is a breaking
 change, so package metadata moves to 2.0.0. The Python API stays compatible.
-Migration details are in the README. No release was published by this review.
+Migration details are in the README and [CHANGELOG.md](../CHANGELOG.md).
 
 ## Validation
 
 - Core release suite: 21 unit tests and 5 integration tests passed, on hardware
   and with `RUSTFLAGS='--cfg aes_backend="soft"'`.
-- Python API and ownership suite: 20 tests passed on Python 3.14.8 and on a
-  separately built/installed Python 3.9.25 wheel.
+- Python API, package, and ownership suite: 27 tests passed on Python 3.14.8
+  and on separately built/installed Python 3.9.25 and 3.14.8 wheels.
 - `cargo +1.89.0 check --all-targets --all-features --locked` passed.
 - Rustfmt, Clippy with warnings denied, and Actionlint passed.
 - `cargo audit` 0.22.2 examined 93 locked dependencies against 1,395 RustSec
@@ -57,7 +59,7 @@ GitHub CI; the local environment runs Linux x86_64 only.
 
 ## Python API follow-up
 
-A subsequent review keeps the Python entry points as direct native objects and
+The Python review keeps the entry points as direct native objects and
 adds shipped PEP 561 stubs for both import names. CTR fixed-size key, IV, and
 state snapshots now use arrays rather than three small `Vec` allocations. The
 mutable key needs no retained export after copying; IV/state and mutable data
@@ -70,3 +72,13 @@ Both wheels and the source distribution contain the typing files. Strict Mypy
 checks pass for valid installed-package usage, and six invalid examples are
 rejected as expected. Clippy and the Rust 1.89 all-targets/all-features check also
 pass. See PYTHON.md and PERFORMANCE.md for usage and comparative measurements.
+
+## Release checks
+
+The release pipeline validates matching package versions and the tag's commit,
+runs the reusable CI suite, and builds the native OS/ARM wheel matrices and
+source distribution before publishing GitHub release assets. PyPI publishing
+runs in the top-level `pypi.yml` workflow with the existing `pypi` environment
+and trusted publishing; it does not rely on a bot-created release event to
+start another workflow. See [RELEASING.md](RELEASING.md) for the procedure and
+failure recovery. A queued or dispatched run is not evidence of a passing run.
