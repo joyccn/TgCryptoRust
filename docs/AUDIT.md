@@ -1,5 +1,20 @@
 # Dependency and implementation review
 
+## Python 3.9 retirement
+
+Current package metadata and CI support CPython 3.10–3.15. Python 3.9 was
+removed after setup-python could not resolve a build for Ubuntu 26.04. The
+earlier 3.9 results below describe historical validation, not current support.
+Release checks now cover 30 wheels plus one source distribution. This change
+updates interpreter requirements and release configuration; cipher code is
+unchanged.
+
+The new minimum was validated with an independently built/installed Python
+3.10.22 wheel: 33 tests passed and the Python 3.12+ buffer-hook test was skipped
+as expected. A Python 3.9 resolver correctly rejected the new sdist because of
+its `>=3.10,<3.16` requirement. Actionlint and metadata/matrix/count checks pass
+for all three workflows and the 31-distribution release set.
+
 ## Unreleased Telegram/performance follow-up
 
 This follow-up starts from `74b216b7cff77a73cf9c984a15ec7703ba454025`.

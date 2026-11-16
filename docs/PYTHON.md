@@ -52,7 +52,7 @@ advanced is not a fresh decoder. Do not switch IGE or CBC directions on one obje
 
 Invalid chunk alignment is rejected before updating stream state. Empty chunks
 leave it unchanged. Constructors, methods and both import aliases expose the
-same native objects and PEP 561 stubs on CPython 3.9–3.15.
+same native objects and PEP 561 stubs on CPython 3.10–3.15.
 
 `cdn256_iv` accepts offsets divisible by 16 in `0 <= offset < 2**36`.
 Misalignment or an out-of-range block index raises `ValueError`; negative or

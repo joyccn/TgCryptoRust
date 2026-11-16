@@ -68,7 +68,7 @@ jobs:
           records = Path("checksums/SHA256SUMS").read_text().splitlines()
           expected = {line.split("  ", 1)[1]: line.split("  ", 1)[0] for line in records}
           files = {p.name: p for p in Path("dist").glob("*")}
-          if len(expected) != 36 or files.keys() != expected.keys():
+          if len(expected) != 31 or files.keys() != expected.keys():
               raise SystemExit("Distribution set differs from the tested release")
           for name, path in files.items():
               if hashlib.sha256(path.read_bytes()).hexdigest() != expected[name]:
@@ -87,7 +87,7 @@ jobs:
                   raise SystemExit(f"Existing PyPI distribution is outside this release: {name}")
               if artifact["digests"]["sha256"] != expected[name]:
                   raise SystemExit(f"Existing PyPI distribution has different bytes: {name}")
-          print("Verified all 36 release distributions and existing PyPI files")
+          print("Verified all 31 release distributions and existing PyPI files")
           PYTHON
 
       - name: Publish to PyPI with Trusted Publishing

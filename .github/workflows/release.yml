@@ -107,7 +107,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout Verified Release Commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -179,7 +179,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [aarch64-unknown-linux-gnu, armv7-unknown-linux-gnueabihf]
-        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout Verified Release Commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -284,8 +284,8 @@ jobs:
           import hashlib
           from pathlib import Path
           files = sorted(Path("dist").glob("*"))
-          if len(files) != 36 or sum(p.suffix == ".whl" for p in files) != 35:
-              raise SystemExit("Expected 35 wheels and one source distribution")
+          if len(files) != 31 or sum(p.suffix == ".whl" for p in files) != 30:
+              raise SystemExit("Expected 30 wheels and one source distribution")
           if sum(p.name.endswith(".tar.gz") for p in files) != 1:
               raise SystemExit("Expected exactly one source distribution")
           with open("dist/SHA256SUMS", "w") as output:

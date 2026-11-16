@@ -26,10 +26,10 @@ manually; it does not replace the top-level PyPI publishing step.
 
 1. Verify tag/version/commit consistency.
 2. Run the reusable CI suite: format and lint, Rust 1.89 MSRV, Rust tests on
-   Linux/macOS/Windows, forced software AES, and Python 3.9–3.15 wheel tests.
+   Linux/macOS/Windows, forced software AES, and Python 3.10–3.15 wheel tests.
 3. Build the native OS wheel matrix, Linux ARM wheels, and source distribution
    from the same reviewed source. Required builds must succeed before publication.
-   The matrix contains 35 wheels (seven Python versions across three native OS
+   The matrix contains 30 wheels (six Python versions across three native OS
    targets and two Linux ARM targets) plus one source distribution.
 4. Publish the GitHub release with its artifacts.
 5. Publish that artifact set to PyPI using trusted publishing from the top-level

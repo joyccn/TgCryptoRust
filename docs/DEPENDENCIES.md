@@ -57,8 +57,13 @@ to its stated lockfile/database, not automatically to this refreshed graph.
 
 ## Python 3.15.2
 
-The package's Python range now includes CPython 3.9 through 3.15
-(`>=3.9,<3.16`), with a Python 3.15 classifier and CI/release matrix entries.
+The package's Python range now includes CPython 3.10 through 3.15
+(`>=3.10,<3.16`), with a Python 3.15 classifier and CI/release matrix entries.
+Python 3.9 support was removed after GitHub's Ubuntu 26.04 runner migration:
+the official setup-python manifest has no Python 3.9 build for that OS. The
+manifest provides Ubuntu 26.04 x64/arm64 builds for every retained minor version,
+so Python 3.10–3.15 can continue using the current runner. See the
+[official interpreter manifest](https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json).
 CPython's official [`v3.15.2` tag](https://github.com/python/cpython/tree/v3.15.2)
 resolves to `5e58eaad7c58df58dfa8ea549c87996e01dd1077`; its
 [`patchlevel.h`](https://github.com/python/cpython/blob/v3.15.2/Include/patchlevel.h)
@@ -83,7 +88,7 @@ All actions retain immutable full commit pins. This update advances:
 Already-current pins were retained for checkout 7.0.1, setup-python 7.1.0,
 rust-cache 2.9.3, maturin-action 1.51.0, upload-artifact 7.0.2,
 download-artifact 8.0.2 and PyPI publishing 1.14.3. The Python wheel matrix gains
-3.15; the release artifact check now expects 35 wheels and one source
+3.15; the release artifact check now expects 30 wheels and one source
 distribution. Wheel smoke tests exercise the additive CBC streaming API
 against an independent NIST vector.
 

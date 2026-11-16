@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Drop Python 3.9 support after the Ubuntu 26.04 setup-python compatibility
+  failure. The supported range is now CPython 3.10–3.15; CI/release matrices
+  and distribution checks cover 30 wheels plus one source distribution.
 - Support CPython 3.15, including 3.15.2, with matching package metadata,
   classifiers, locked Python requirements and CI/wheel release matrices.
 - Add native `Cbc256` aligned streaming and Rust CBC preexpanded-key helpers

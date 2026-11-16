@@ -10,7 +10,7 @@ Rust-powered AES-256 primitives and streaming modes for Telegram clients.
 
 [![CI](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml/badge.svg)](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Python](https://img.shields.io/badge/python-3.9--3.15-brightgreen)
+![Python](https://img.shields.io/badge/python-3.10--3.15-brightgreen)
 ![Rust](https://img.shields.io/badge/rust-1.89%2B-orange)
 
 **TgCryptoRust** provides a compatible Python API for [TgCrypto](https://github.com/pyrogram/tgcrypto),
@@ -23,7 +23,7 @@ It implements the cryptographic algorithms Telegram requires, namely:
 
 ## Requirements
 
-- Python 3.9 through 3.15 (including 3.15.2)
+- Python 3.10 through 3.15 (including 3.15.2)
 - Rust 1.89+ (only when building from source)
 
 The release workflows build wheels for common desktop and server platforms.
