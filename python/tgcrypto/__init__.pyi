@@ -1,10 +1,12 @@
 from tgcryptors import (
+    Cbc256 as Cbc256,
     Ctr256 as Ctr256,
     Ige256 as Ige256,
     __all__ as __all__,
     __version__ as __version__,
     cbc256_decrypt as cbc256_decrypt,
     cbc256_encrypt as cbc256_encrypt,
+    cdn256_iv as cdn256_iv,
     ctr256_decrypt as ctr256_decrypt,
     ctr256_encrypt as ctr256_encrypt,
     ige256_decrypt as ige256_decrypt,

@@ -6,12 +6,14 @@ changes.
 """
 
 from tgcryptors import (  # noqa: F401
+    Cbc256,
     Ctr256,
     Ige256,
     __all__ as __all__,
     __version__,
     cbc256_decrypt,
     cbc256_encrypt,
+    cdn256_iv,
     ctr256_decrypt,
     ctr256_encrypt,
     ige256_decrypt,

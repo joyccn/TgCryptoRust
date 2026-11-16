@@ -182,10 +182,16 @@ fn ctr256_encrypt_internal(
     // Keep the x4 path below for shorter tails.
     while i + 128 <= len {
         let mut ivs = [0u8; 128];
-        for counter in ivs.as_chunks_mut::<AES_BLOCK_SIZE>().0 {
-            counter.copy_from_slice(iv);
-            increment_counter(iv);
+        let counter = u128::from_be_bytes(*iv);
+        for (offset, block) in ivs
+            .as_chunks_mut::<AES_BLOCK_SIZE>()
+            .0
+            .iter_mut()
+            .enumerate()
+        {
+            *block = counter.wrapping_add(offset as u128).to_be_bytes();
         }
+        *iv = counter.wrapping_add(8).to_be_bytes();
         let mut keystream = [0u8; 128];
         aes256::encrypt_block_x8(&ivs, &mut keystream, ek);
         for j in 0..128 {
@@ -197,15 +203,16 @@ fn ctr256_encrypt_internal(
     // Batch four counter blocks for a shorter tail.
     while i + 64 <= len {
         let mut ivs = [0u8; 64];
-
-        ivs[0..16].copy_from_slice(iv);
-        increment_counter(iv);
-        ivs[16..32].copy_from_slice(iv);
-        increment_counter(iv);
-        ivs[32..48].copy_from_slice(iv);
-        increment_counter(iv);
-        ivs[48..64].copy_from_slice(iv);
-        increment_counter(iv);
+        let counter = u128::from_be_bytes(*iv);
+        for (offset, block) in ivs
+            .as_chunks_mut::<AES_BLOCK_SIZE>()
+            .0
+            .iter_mut()
+            .enumerate()
+        {
+            *block = counter.wrapping_add(offset as u128).to_be_bytes();
+        }
+        *iv = counter.wrapping_add(4).to_be_bytes();
 
         let mut keystream = [0u8; 64];
         aes256::encrypt_block_x4(&ivs, &mut keystream, ek);

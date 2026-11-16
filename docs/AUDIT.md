@@ -1,5 +1,59 @@
 # Dependency and implementation review
 
+## Unreleased Telegram/performance follow-up
+
+This follow-up starts from `74b216b7cff77a73cf9c984a15ec7703ba454025`.
+Changes were implemented independently after reviewing WarpCrypto and TDLib;
+no WarpCrypto source was copied. The six TgCrypto functions, mutable CTR
+semantics and direct native Python exports remain compatible.
+
+| Finding/opportunity | Change | Regression evidence |
+| --- | --- | --- |
+| CBC expanded keys for each small chunk | Rust preexpanded helpers and native `Cbc256` | NIST vectors across chunk splits, empty calls and validation atomicity |
+| CTR counter batches repeated bytewise carry loops | Full-width wrapping counter batches | Independent block-at-a-time oracle across residual offsets, carry/wrap and parallel boundaries |
+| IGE selected its backend per block | Safe backend closure for each complete call | Independent IGE vector, chaining and hardware/software tests |
+| CDN offsets differ from generic CTR addition | Checked `cdn256_iv` replaces the final four IV bytes | TDLib rule, byte-order fixtures, limits and full-stream/range equivalence |
+| Mutable payload allocation could abort | Fallible reserve mapped to `MemoryError` | Isolated Linux address-space-limit regression, unchanged state and released exports |
+| Invalid fixed arguments caused an unnecessary payload copy | Validate key/IV/state first | Python buffer-hook and invalid-argument cleanup regressions |
+| Python support metadata stopped at 3.14 | Metadata, CI and wheel matrix through 3.15 | Real Python 3.15.2 extension and independently installed wheel |
+
+The initial validation, before the executor reset, passed these checks on
+Linux x86_64 with Rust 1.89.0 and AES 0.9.4:
+
+| Check | Result |
+| --- | --- |
+| Rust release, hardware and forced-software backends | 23 unit + 7 integration tests on each backend; no ignored tests |
+| CPython 3.15.2 and 3.14.10 | 34 passed on each; zero skipped |
+| CPython 3.9.25 installed wheel | 33 passed, one expected Python 3.12+ buffer-hook skip |
+| Rustfmt / Clippy / MSRV | All-targets/all-features checks passed on Rust 1.89, warnings denied |
+| Wheel and source-distribution contents | New APIs/type files present; wheels declare `>=3.9,<3.16`; sdist contains `telegram.rs` |
+| Strict Mypy 2.4.1 against installed 3.15 wheel | Valid calls pass; two deliberately invalid CBC/CDN calls rejected |
+| Workflow validation | YAML/embedded Python parse; Actionlint 1.7.9 passed all three workflows |
+| Lockfiles | `cargo fetch --locked` and `uv lock --check` passed |
+
+After reconnection the platform restored the original checkout, without the
+uncommitted changes. The implementation was recovered from recorded patches
+and independently revalidated before commit/push. Historical benchmark reports
+were recovered from tool output and labelled accordingly; original raw timing
+samples are unavailable. See [PERFORMANCE.md](PERFORMANCE.md).
+
+Fresh recovery checks passed: the same 30 core tests on both hardware and
+forced-software AES, Rustfmt, Clippy with warnings denied, and frozen-lock
+validation. Independently rebuilt/installed wheels passed 34 tests on Python
+3.15.2 and 3.14.10; Python 3.9.25 passed 33 with the expected buffer-hook skip.
+All three wheels include the native APIs/type files and correct Python bounds;
+the rebuilt source distribution includes the new Telegram module and stubs.
+
+The dependency/changelog review is in [DEPENDENCIES.md](DEPENDENCIES.md), and
+the protocol contracts and pinned TDLib sources are in
+[TELEGRAM.md](TELEGRAM.md). Telegram's web pages returned HTTP 403, so the review
+used authoritative TDLib source. No live Telegram session was used. OS/ARM and
+the complete Python matrix remain CI checks; free-threaded Python is outside
+the tested matrix. The historical RustSec scan below does not cover the new
+lockfile. These results do not constitute an independent cryptographic audit.
+
+## Historical 2.0.0 review
+
 This review covers TgCryptoRust 2.0.0, developed from
 `bc33cf603f7742337d53ae125602a1836e8dc51e` and including the Python binding
 follow-up. It is an implementation review with targeted tests, not an independent

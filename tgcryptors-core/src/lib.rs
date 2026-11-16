@@ -21,6 +21,7 @@ pub mod aes256;
 pub mod cbc256;
 pub mod ctr256;
 pub mod ige256;
+pub mod telegram;
 
 /// Whether the legacy compatibility feature was enabled (not CPU/backend status).
 pub const AESNI_FEATURE_ENABLED: bool = cfg!(feature = "aesni");
@@ -30,9 +31,13 @@ pub const AES_BLOCK_SIZE: usize = aes256::AES_BLOCK_SIZE;
 
 /// Re-export the main APIs for convenience.
 pub use aes256::ExpandedKey;
-pub use cbc256::{cbc256_decrypt, cbc256_decrypt_into, cbc256_encrypt, cbc256_encrypt_into};
+pub use cbc256::{
+    cbc256_decrypt, cbc256_decrypt_into, cbc256_decrypt_into_ek, cbc256_encrypt,
+    cbc256_encrypt_into, cbc256_encrypt_into_ek,
+};
 pub use ctr256::{ctr256_decrypt, ctr256_encrypt, ctr256_encrypt_into, ctr256_encrypt_into_ek};
 pub use ige256::{
     ige256_decrypt, ige256_decrypt_into, ige256_decrypt_into_ek, ige256_encrypt,
     ige256_encrypt_into, ige256_encrypt_into_ek,
 };
+pub use telegram::{cdn256_iv, CdnOffsetError};

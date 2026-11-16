@@ -5,7 +5,71 @@
 //! AES uses runtime hardware dispatch or constant-time software via RustCrypto.
 //! IGE itself does not authenticate messages; see the crate-level security notice.
 
-use crate::aes256::{self, ExpandedKey, AES_BLOCK_SIZE};
+use crate::aes256::{ExpandedKey, AES_BLOCK_SIZE};
+use aes::cipher::{
+    consts::U16, BlockCipherDecBackend, BlockCipherDecClosure, BlockCipherEncBackend,
+    BlockCipherEncClosure, BlockSizeUser,
+};
+
+struct IgeBlocks<'a> {
+    data: &'a [u8],
+    dest: &'a mut [u8],
+    iv: &'a mut [u8; 32],
+}
+
+impl BlockSizeUser for IgeBlocks<'_> {
+    type BlockSize = U16;
+}
+
+impl BlockCipherEncClosure for IgeBlocks<'_> {
+    #[inline]
+    fn call<B: BlockCipherEncBackend<BlockSize = U16>>(self, backend: &B) {
+        let (iv1, iv2) = self.iv.split_at_mut(AES_BLOCK_SIZE);
+        for (input, output) in self
+            .data
+            .as_chunks::<AES_BLOCK_SIZE>()
+            .0
+            .iter()
+            .zip(self.dest.as_chunks_mut::<AES_BLOCK_SIZE>().0)
+        {
+            let mut block = aes::Block::default();
+            for j in 0..AES_BLOCK_SIZE {
+                block[j] = input[j] ^ iv1[j];
+            }
+            backend.encrypt_block_inplace(&mut block);
+            for j in 0..AES_BLOCK_SIZE {
+                output[j] = block[j] ^ iv2[j];
+            }
+            iv1.copy_from_slice(output);
+            iv2.copy_from_slice(input);
+        }
+    }
+}
+
+impl BlockCipherDecClosure for IgeBlocks<'_> {
+    #[inline]
+    fn call<B: BlockCipherDecBackend<BlockSize = U16>>(self, backend: &B) {
+        let (previous_ciphertext, previous_plaintext) = self.iv.split_at_mut(AES_BLOCK_SIZE);
+        for (input, output) in self
+            .data
+            .as_chunks::<AES_BLOCK_SIZE>()
+            .0
+            .iter()
+            .zip(self.dest.as_chunks_mut::<AES_BLOCK_SIZE>().0)
+        {
+            let mut block = aes::Block::default();
+            for j in 0..AES_BLOCK_SIZE {
+                block[j] = input[j] ^ previous_plaintext[j];
+            }
+            backend.decrypt_block_inplace(&mut block);
+            for j in 0..AES_BLOCK_SIZE {
+                output[j] = block[j] ^ previous_ciphertext[j];
+            }
+            previous_ciphertext.copy_from_slice(input);
+            previous_plaintext.copy_from_slice(output);
+        }
+    }
+}
 
 /// Encrypt aligned data into `dest`.
 ///
@@ -34,33 +98,9 @@ pub fn ige256_encrypt_into_ek(data: &[u8], ek: &ExpandedKey, iv: &mut [u8; 32], 
         "Data length must be a multiple of {AES_BLOCK_SIZE} bytes, got {len}",
     );
 
-    let mut iv1 = [0u8; AES_BLOCK_SIZE];
-    let mut iv2 = [0u8; AES_BLOCK_SIZE];
-    iv1.copy_from_slice(&iv[0..16]);
-    iv2.copy_from_slice(&iv[16..32]);
-
-    let mut i = 0;
-    while i < len {
-        let mut buffer = [0u8; AES_BLOCK_SIZE];
-        for j in 0..AES_BLOCK_SIZE {
-            buffer[j] = data[i + j] ^ iv1[j];
-        }
-
-        let mut encrypted = [0u8; AES_BLOCK_SIZE];
-        aes256::encrypt_block(&buffer, &mut encrypted, ek);
-
-        for j in 0..AES_BLOCK_SIZE {
-            dest[i + j] = encrypted[j] ^ iv2[j];
-        }
-
-        iv1.copy_from_slice(&dest[i..i + AES_BLOCK_SIZE]);
-        iv2.copy_from_slice(&data[i..i + AES_BLOCK_SIZE]);
-
-        i += AES_BLOCK_SIZE;
-    }
-
-    iv[0..16].copy_from_slice(&iv1);
-    iv[16..32].copy_from_slice(&iv2);
+    // IGE blocks depend on previous output, but backend dispatch does not.
+    // Keep the whole loop inside one RustCrypto dispatch for this call.
+    ek.encrypt_with_backend(IgeBlocks { data, dest, iv });
 }
 
 /// Decrypt aligned data into `dest`.
@@ -86,35 +126,7 @@ pub fn ige256_decrypt_into_ek(data: &[u8], dk: &ExpandedKey, iv: &mut [u8; 32], 
         "Data length must be a multiple of {AES_BLOCK_SIZE} bytes, got {len}",
     );
 
-    let mut iv1 = [0u8; AES_BLOCK_SIZE];
-    let mut iv2 = [0u8; AES_BLOCK_SIZE];
-    iv1.copy_from_slice(&iv[16..32]);
-    iv2.copy_from_slice(&iv[0..16]);
-
-    let mut i = 0;
-    while i < len {
-        let chunk = &data[i..i + AES_BLOCK_SIZE];
-
-        let mut buffer = [0u8; AES_BLOCK_SIZE];
-        for j in 0..AES_BLOCK_SIZE {
-            buffer[j] = chunk[j] ^ iv1[j];
-        }
-
-        let mut decrypted = [0u8; AES_BLOCK_SIZE];
-        aes256::decrypt_block(&buffer, &mut decrypted, dk);
-
-        for j in 0..AES_BLOCK_SIZE {
-            dest[i + j] = decrypted[j] ^ iv2[j];
-        }
-
-        iv1.copy_from_slice(&dest[i..i + AES_BLOCK_SIZE]);
-        iv2.copy_from_slice(chunk);
-
-        i += AES_BLOCK_SIZE;
-    }
-
-    iv[0..16].copy_from_slice(&iv2);
-    iv[16..32].copy_from_slice(&iv1);
+    dk.decrypt_with_backend(IgeBlocks { data, dest, iv });
 }
 
 /// Encrypt aligned data and return the ciphertext.

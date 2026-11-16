@@ -156,6 +156,57 @@ class TgCryptoApiTests(unittest.TestCase):
         self.assertEqual(tgcrypto.Ctr256(self.key, self.iv_cbc).update(b""), b"")
         self.assertEqual(tgcrypto.Ige256(self.key, self.iv_ige).encrypt(b""), b"")
         self.assertEqual(tgcrypto.Ige256(self.key, self.iv_ige).decrypt(b""), b"")
+        self.assertEqual(tgcrypto.Cbc256(self.key, self.iv_cbc).encrypt(b""), b"")
+        self.assertEqual(tgcrypto.Cbc256(self.key, self.iv_cbc).decrypt(b""), b"")
+
+    def test_cbc_stream_matches_nist_vector_across_chunks(self) -> None:
+        # NIST SP 800-38A F.2.5/F.2.6: independent expected ciphertext.
+        key = bytes.fromhex(
+            "603deb1015ca71be2b73aef0857d7781"
+            "1f352c073b6108d72d9810a30914dff4"
+        )
+        iv = bytes.fromhex("000102030405060708090a0b0c0d0e0f")
+        plaintext = bytes.fromhex(
+            "6bc1bee22e409f96e93d7e117393172a"
+            "ae2d8a571e03ac9c9eb76fac45af8e51"
+            "30c81c46a35ce411e5fbc1191a0a52ef"
+            "f69f2445df4f9b17ad2b417be66c3710"
+        )
+        ciphertext = bytes.fromhex(
+            "f58c4c04d6e5f1ba779eabfb5f7bfbd6"
+            "9cfc4e967edb808d679f777bc6702c7d"
+            "39f23369a9d9bacfa530e26304231461"
+            "b2eb05e2c39be9fcda6c19078c6a9d1b"
+        )
+        for split in range(0, len(plaintext) + 1, 16):
+            with self.subTest(split=split):
+                enc = tgcrypto.Cbc256(key, iv)
+                dec = tgcryptors.Cbc256(key, iv)
+                self.assertEqual(
+                    enc.encrypt(plaintext[:split]) + enc.encrypt(plaintext[split:]),
+                    ciphertext,
+                )
+                self.assertEqual(
+                    dec.decrypt(ciphertext[:split]) + dec.decrypt(ciphertext[split:]),
+                    plaintext,
+                )
+
+    def test_cbc_stream_validates_parameters_and_preserves_iv_on_failure(self) -> None:
+        for method in ("encrypt", "decrypt"):
+            with self.subTest(method=method):
+                stream = tgcrypto.Cbc256(self.key, self.iv_cbc)
+                operation = getattr(stream, method)
+                with self.assertRaisesRegex(ValueError, "multiple of 16 bytes"):
+                    operation(b"unaligned")
+                self.assertEqual(operation(b""), b"")
+                expected = getattr(tgcrypto, f"cbc256_{method}")(
+                    self.data, self.key, self.iv_cbc
+                )
+                self.assertEqual(operation(self.data), expected)
+        with self.assertRaisesRegex(ValueError, "Key must be exactly 32 bytes"):
+            tgcrypto.Cbc256(self.key[:-1], self.iv_cbc)
+        with self.assertRaisesRegex(ValueError, "IV must be exactly 16 bytes"):
+            tgcrypto.Cbc256(self.key, self.iv_cbc[:-1])
 
     def test_validation_errors_are_explicit(self) -> None:
         with self.assertRaisesRegex(ValueError, "Key must be exactly 32 bytes"):
@@ -206,6 +257,7 @@ class TgCryptoApiTests(unittest.TestCase):
         self.assertEqual(tgcrypto.__version__, tgcryptors.__version__)
         self.assertIs(tgcrypto.Ctr256, tgcryptors.Ctr256)
         self.assertIs(tgcrypto.Ige256, tgcryptors.Ige256)
+        self.assertIs(tgcrypto.Cbc256, tgcryptors.Cbc256)
 
         encrypted = tgcryptors.ctr256_encrypt(
             self.data,

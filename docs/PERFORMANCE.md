@@ -111,3 +111,75 @@ caller-owned buffers, and sizes may differ across builds and platforms.
 
 Full samples: [before](../benchmarks/results/python-inputs-before.json) and
 [after](../benchmarks/results/python-inputs-after.json).
+
+## Telegram handling follow-up (unreleased)
+
+CTR now generates each four/eight-block counter batch using full-width wrapping
+arithmetic instead of repeated bytewise carry loops. IGE selects RustCrypto's
+backend once per complete call using safe backend closures. Counter order,
+opaque zeroized schedules and hardware/software compatibility are retained.
+
+These historical comparisons used Rust 1.89.0 and hardware AES on the same
+Linux x86_64 AMD EPYC 9V74 machine. Each Criterion comparison kept the AES
+dependency fixed: 0.9.3 for CTR and 0.9.4 for IGE. Both retain output and an
+expanded key and reset their counter/IV per iteration. Samples used 30
+measurements, two seconds measurement time and one second warm-up.
+
+| Encryption workload | Bytes | Before (ns) | After (ns) | Time reduction |
+| --- | ---: | ---: | ---: | ---: |
+| CTR | 64 | 52.22 | 37.70 | 27.8% |
+| CTR | 1,024 | 551.79 | 355.23 | 35.6% |
+| CTR | 16,384 | 8,721.93 | 5,504.48 | 36.9% |
+| IGE | 64 | 160.13 | 114.44 | 28.5% |
+| IGE | 1,024 | 2,299.24 | 2,080.79 | 9.5% |
+| IGE | 16,384 | 35,813.25 | 32,907.46 | 8.1% |
+
+Recorded estimates and commands:
+[CTR counter batching](../benchmarks/results/ctr-counter-comparison.json) and
+[IGE dispatch](../benchmarks/results/ige-dispatch-comparison.json).
+
+The final Python extension was also rebuilt and measured against baseline
+commit `74b216b` on CPython 3.14.10 with four Rayon threads and five timing
+batches. Both extensions report 2.0.0; labels, source revision/dirty state and
+AES version distinguish the unreleased build. These end-to-end samples include
+the dependency refresh, output allocation and Python/native call overhead.
+
+| Python operation | Input | Before (µs) | After (µs) | Time change |
+| --- | ---: | ---: | ---: | ---: |
+| CTR | 64 B | 0.363 | 0.308 | -15.2% |
+| CTR | 1 KiB | 0.915 | 0.654 | -28.5% |
+| CTR | 16 KiB | 9.450 | 6.021 | -36.3% |
+| IGE encrypt | 64 B | 0.412 | 0.315 | -23.5% |
+| IGE encrypt | 1 KiB | 2.641 | 2.272 | -14.0% |
+| IGE encrypt | 16 KiB | 38.239 | 33.429 | -12.6% |
+| CBC decrypt | 256 KiB | 90.478 | 103.383 | +14.3% |
+| CBC decrypt | 1 MiB | 198.103 | 243.460 | +22.9% |
+
+Large parallel CBC-decryption samples were slower and remain in the report.
+Scheduling affects these cases; the data does not establish an improvement in
+every mode or size. On the final build, reusable 64-byte CBC encryption took
+0.206 µs per call versus 0.329 µs one-shot, and decryption 0.132 versus 0.244 µs.
+Streaming advances state across calls; one-shot samples restart it. Choose
+message boundaries correctly rather than selecting an API solely by timing.
+
+```sh
+RAYON_NUM_THREADS=4 .venv/bin/python benchmarks/benchmark_python.py \
+  --repeats 5 --label my-built-revision --output /tmp/telegram-refresh.json
+```
+
+The Rust compiler must be on PATH to record its version. Source metadata
+identifies the checkout, not an independently verified binary; rebuild first.
+Python reports: [before](../benchmarks/results/telegram-refresh-before.json)
+and [after](../benchmarks/results/telegram-refresh-after.json).
+
+An executor reset removed the original local benchmark files before commit.
+The follow-up JSON reports were recovered from the recorded tool output:
+point estimates and Python timings are exact; Criterion confidence intervals
+are explicitly marked as console-rounded. Original raw samples and
+full-precision interval metadata are unavailable. These are historical results,
+not a new measurement on the recovered executor.
+
+The synthetic shared-CPU results do not measure Telegram network latency,
+authentication, ARM, software-backend performance or Python 3.15 performance.
+Benchmark representative workloads on deployment hardware before changing
+Rayon thread counts or promising latency/throughput guarantees.

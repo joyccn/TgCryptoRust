@@ -14,6 +14,8 @@ packages, including precise accepted input types and runtime metadata fields.
 | CTR functions | `bytes` or `bytearray` for each argument | 32 / 16 bytes | One byte in `0..15`; mutable IV/state advance in place |
 | `Ctr256` | `bytes` constructor arguments and update data | 32 / 16 bytes | Object retains counter and byte offset |
 | `Ige256` | `bytes` constructor arguments and chunk data | 32 / 32 bytes | Object retains chaining state; chunks must be block aligned |
+| `Cbc256` | `bytes` constructor arguments and chunk data | 32 / 16 bytes | Object retains the previous ciphertext block; chunks must be block aligned |
+| `cdn256_iv` | `bytes` IV and integer byte offset | IV: 16 bytes | Returns a new IV with the final four bytes replaced by `BE32(offset / 16)` |
 
 Every cipher operation returns immutable `bytes`. Empty input is accepted;
 padding is never added or stripped. Convert other buffer types explicitly when
@@ -27,6 +29,7 @@ needed. In particular, `memoryview` is not an accepted input type, and passing a
 | One independent message | `ige256_encrypt`, `cbc256_encrypt`, or `ctr256_encrypt` | Expands the key per call and returns new `bytes` |
 | Chunks of one CTR stream | `Ctr256.update` | Reuses one expanded key and retains counter/offset |
 | Block-aligned chunks of one IGE stream | `Ige256.encrypt` or `.decrypt` | Reuses one expanded key and retains chaining state |
+| Block-aligned chunks of one CBC stream | `Cbc256.encrypt` or `.decrypt` | Reuses one expanded key and retains chaining state; no padding |
 | Existing TgCrypto transport code | CTR functions with mutable IV/state | Writes the advanced counter/offset back to `bytearray` |
 
 Use separate objects for independent streams and encryption/decryption
@@ -42,10 +45,20 @@ def encrypt_chunks(key: bytes, iv: bytes, chunks: list[bytes]) -> list[bytes]:
     return [stream.update(chunk) for chunk in chunks]
 ```
 
-The complete stream surface is `Ctr256(key, iv).update(data)` and
-`Ige256(key, iv).encrypt(data)` / `.decrypt(data)`. Construct a fresh decoder
+The stream surface is `Ctr256(key, iv).update(data)` and
+`Ige256(key, iv)` / `Cbc256(key, iv)` with `.encrypt(data)` / `.decrypt(data)`. Construct a fresh decoder
 with the original IV to decrypt the resulting stream; a stream that has already
-advanced is not a fresh decoder. Do not switch IGE directions on one object.
+advanced is not a fresh decoder. Do not switch IGE or CBC directions on one object.
+
+Invalid chunk alignment is rejected before updating stream state. Empty chunks
+leave it unchanged. Constructors, methods and both import aliases expose the
+same native objects and PEP 561 stubs on CPython 3.9–3.15.
+
+`cdn256_iv` accepts offsets divisible by 16 in `0 <= offset < 2**36`.
+Misalignment or an out-of-range block index raises `ValueError`; negative or
+larger-than-`u64` offsets raise `OverflowError`. It constructs parameters only,
+without authenticating data. See [Telegram integration](TELEGRAM.md) before
+processing CDN ranges or Passport credentials.
 
 ## Avoid unnecessary copies
 
@@ -58,6 +71,10 @@ The CTR key, counter, and one-byte offset are copied directly into fixed-size
 Rust arrays. Mutable IV/state retain buffer exports through write-back, so they
 cannot be resized during an operation. Key snapshots do not need an export
 after copying. Caller-owned key buffers are not cleared by the library.
+
+Fixed key/IV/state validation occurs before copying a mutable payload. Its
+snapshot reserves capacity fallibly so allocation failure becomes Python
+`MemoryError`, rather than aborting the process through Rust's allocator.
 
 Output allocation and initialization, plus zeroization of owned secret copies,
 remain enabled. The library cannot erase caller-owned immutable keys or all
@@ -88,7 +105,7 @@ backend is `"rustcrypto-hardware"` or `"rustcrypto-fixslice"`. `aesni` describes
 active x86 hardware acceleration, while `hardware_accelerated` also covers ARM.
 Checking metadata once during startup is sufficient; it is not needed per chunk.
 
-From a built source checkout, run the 27 Python tests with:
+From a built source checkout, run the Python tests with:
 
 ```sh
 .venv/bin/python -m unittest discover -s tests -v

@@ -10,7 +10,7 @@
 //! - `cbc256_decrypt(data, key, iv) -> bytes`
 
 use pyo3::buffer::PyBuffer;
-use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::sync::critical_section::with_critical_section;
 use pyo3::types::{PyAny, PyByteArray, PyBytes, PyDict};
@@ -70,7 +70,17 @@ impl<'py> BufferInput<'py> {
         if let Ok(array) = ob.cast::<PyByteArray>() {
             return Ok(BufferInput::ByteArray {
                 _source: ByteArraySource::new(array)?,
-                data: Zeroizing::new(array.to_vec()),
+                data: with_critical_section(array.as_any(), || {
+                    let mut snapshot = Zeroizing::new(Vec::new());
+                    snapshot.try_reserve_exact(array.len()).map_err(|_| {
+                        PyMemoryError::new_err("Unable to allocate mutable input snapshot")
+                    })?;
+                    // SAFETY: the bytearray is locked and the copy makes no
+                    // Python calls. Capacity was reserved through a fallible
+                    // allocation, so an allocation failure becomes MemoryError.
+                    snapshot.extend_from_slice(unsafe { array.as_bytes() });
+                    Ok::<_, PyErr>(snapshot)
+                })?,
             });
         }
         Err(PyTypeError::new_err(format!(
@@ -281,7 +291,9 @@ fn ige256_decrypt<'py>(
 /// Raises:
 ///     TypeError: If `data`, `key`, `iv`, or `state` are not `bytes` or
 ///         `bytearray`.
-///     ValueError: If `data`, `key`, `iv`, or `state` have invalid lengths.
+///     ValueError: If `key`, `iv`, or `state` have invalid lengths, or the
+///         residual offset is outside the range 0 through 15.
+///     MemoryError: If allocating a mutable input snapshot or output fails.
 ///     OverflowError: If the requested output would exceed Python's `bytes` size limit.
 ///     RuntimeError: If an unexpected internal error occurs.
 #[pyfunction]
@@ -293,7 +305,6 @@ fn ctr256_encrypt<'py>(
     iv: &Bound<'py, PyAny>,
     state: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
-    let data = BufferInput::from_any(data, "Data")?;
     let key_arr = copy_buffer_array::<32>(key, "Key")?;
     // Exports pin only state that will be written back. Small snapshots avoid
     // allocating separate Vecs for the key, counter, and residual byte offset.
@@ -302,6 +313,9 @@ fn ctr256_encrypt<'py>(
     let state_source = ByteArraySource::from_any(state)?;
     let state_arr = copy_buffer_array::<1>(state, "State")?;
     let mut state_val = validate_ctr_state(state_arr[0])?;
+    // Reject invalid fixed-size parameters before exporting or allocating a
+    // potentially large mutable payload snapshot.
+    let data = BufferInput::from_any(data, "Data")?;
     let data_slice = data.as_bytes();
 
     let (bytes, (next_iv, next_state)) = execute_zerocopy(py, data_slice.len(), move |dest| {
@@ -404,6 +418,20 @@ fn cbc256_decrypt<'py>(
         tgcryptors_core::cbc256_decrypt_into(data, &key_arr, &mut iv_arr, dest);
     })?;
     Ok(bytes)
+}
+
+/// Derive Telegram's CDN AES-CTR counter for an aligned file byte offset.
+///
+/// The first 12 IV bytes are preserved; the final four bytes are replaced
+/// with the big-endian AES block index. Offset must be a multiple of 16 and
+/// its block index must fit in 32 bits. This helper does not authenticate data.
+#[pyfunction]
+#[pyo3(signature = (iv, offset))]
+fn cdn256_iv<'py>(py: Python<'py>, iv: &[u8], offset: u64) -> PyResult<Bound<'py, PyBytes>> {
+    let iv = copy_array::<16>(iv, "IV")?;
+    let result = tgcryptors_core::telegram::cdn256_iv(&iv, offset)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    Ok(PyBytes::new(py, &result))
 }
 
 /// Return compact runtime metadata useful for support and diagnostics.
@@ -566,6 +594,61 @@ impl Ige256 {
     }
 }
 
+/// Stateful AES-256-CBC cipher for one block-aligned stream and direction.
+///
+/// Each call advances the chaining IV. The AES key schedule is expanded once
+/// and reused. Chunks must be multiples of 16 bytes; no padding is added or
+/// removed. Use separate objects for encryption and decryption.
+#[pyclass(module = "tgcryptors")]
+struct Cbc256 {
+    key: tgcryptors_core::ExpandedKey,
+    iv: [u8; 16],
+}
+
+#[pymethods]
+impl Cbc256 {
+    /// Create a CBC stream with a 32-byte AES key and 16-byte initial IV.
+    #[new]
+    fn new(key: &[u8], iv: &[u8]) -> PyResult<Self> {
+        let key_arr = Zeroizing::new(copy_array::<32>(key, "Key")?);
+        let iv_arr = copy_array::<16>(iv, "IV")?;
+        Ok(Cbc256 {
+            key: tgcryptors_core::ExpandedKey::new_encrypt(&key_arr),
+            iv: iv_arr,
+        })
+    }
+
+    /// Encrypt the next block-aligned chunk without adding padding.
+    ///
+    /// An invalid chunk raises ValueError without advancing the chaining IV.
+    fn encrypt<'py>(&mut self, py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
+        ensure_block_aligned(data)?;
+        let key = &self.key;
+        let mut iv = self.iv;
+        let (result, next_iv) = execute_zerocopy(py, data.len(), move |dest| {
+            tgcryptors_core::cbc256_encrypt_into_ek(data, key, &mut iv, dest);
+            iv
+        })?;
+        self.iv = next_iv;
+        Ok(result)
+    }
+
+    /// Decrypt the next block-aligned chunk without removing padding.
+    ///
+    /// An invalid chunk raises ValueError without advancing the chaining IV.
+    fn decrypt<'py>(&mut self, py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
+        ensure_block_aligned(data)?;
+        let key = &self.key;
+        let mut iv = self.iv;
+        let (result, next_iv) = execute_zerocopy(py, data.len(), move |dest| {
+            tgcryptors_core::cbc256_decrypt_into_ek(data, key, &mut iv, dest);
+            iv
+        })?;
+        self.iv = next_iv;
+        Ok(result)
+    }
+}
+
 /// Native TgCryptoRust Python extension module.
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -576,10 +659,12 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ctr256_decrypt, m)?)?;
     m.add_function(wrap_pyfunction!(cbc256_encrypt, m)?)?;
     m.add_function(wrap_pyfunction!(cbc256_decrypt, m)?)?;
+    m.add_function(wrap_pyfunction!(cdn256_iv, m)?)?;
     m.add_function(wrap_pyfunction!(runtime_info, m)?)?;
 
     m.add_class::<Ctr256>()?;
     m.add_class::<Ige256>()?;
+    m.add_class::<Cbc256>()?;
 
     Ok(())
 }

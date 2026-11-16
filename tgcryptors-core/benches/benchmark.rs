@@ -1,8 +1,8 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
 use tgcryptors_core::{
-    cbc256_decrypt, cbc256_encrypt, ctr256_encrypt, ctr256_encrypt_into_ek, ige256_decrypt,
-    ige256_encrypt, ige256_encrypt_into_ek, ExpandedKey,
+    cbc256_decrypt, cbc256_decrypt_into_ek, cbc256_encrypt, cbc256_encrypt_into_ek, ctr256_encrypt,
+    ctr256_encrypt_into_ek, ige256_decrypt, ige256_encrypt, ige256_encrypt_into_ek, ExpandedKey,
 };
 
 fn bench_ige256(c: &mut Criterion) {
@@ -104,6 +104,22 @@ fn bench_preexpanded(c: &mut Criterion) {
             b.iter(|| {
                 let mut iv = [0x24; 32];
                 ige256_encrypt_into_ek(black_box(&data), &key, &mut iv, &mut dest);
+                black_box(&dest);
+            });
+        });
+        group.bench_function(BenchmarkId::new("cbc_encrypt", size), |b| {
+            b.iter(|| {
+                let mut iv = [0x24; 16];
+                cbc256_encrypt_into_ek(black_box(&data), &key, &mut iv, &mut dest);
+                black_box(&dest);
+            });
+        });
+        let mut iv = [0x24; 16];
+        let encrypted = cbc256_encrypt(&data, &[0x42; 32], &mut iv);
+        group.bench_function(BenchmarkId::new("cbc_decrypt", size), |b| {
+            b.iter(|| {
+                let mut iv = [0x24; 16];
+                cbc256_decrypt_into_ek(black_box(&encrypted), &key, &mut iv, &mut dest);
                 black_box(&dest);
             });
         });

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Support CPython 3.15, including 3.15.2, with matching package metadata,
+  classifiers, locked Python requirements and CI/wheel release matrices.
+- Add native `Cbc256` aligned streaming and Rust CBC preexpanded-key helpers
+  to reuse one AES schedule across chunks without changing one-shot APIs.
+- Generate CTR counter batches with full-width wrapping arithmetic and select
+  the IGE AES backend once per call, retaining hardware/software compatibility.
+- Add `cdn256_iv` with explicit alignment/range validation for Telegram CDN
+  offsets; replace the IV's final four bytes as required by the protocol.
+- Validate fixed CTR arguments before copying mutable payloads and map
+  fallible snapshot allocation failures to Python `MemoryError`.
+- Update RustCrypto AES to 0.9.4, compatible locked transitive dependencies,
+  and verified GitHub Action pins; retain Rust 1.89 as the minimum.
+- Expand protocol, dependency/changelog and performance documentation, with
+  additional known-answer, state, CDN and allocation regressions.
+
 ## 2.0.0 — 2026-10-31
 
 ### Security and correctness

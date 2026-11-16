@@ -14,6 +14,25 @@ const CHUNK_SIZE: usize = 64 * 1024; // 64 KB per thread
 ///
 /// Panics if the buffers differ in length or if `data` is not a multiple of 16 bytes.
 pub fn cbc256_encrypt_into(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], dest: &mut [u8]) {
+    // Empty input is a no-op and does not need an expanded key.
+    if data.is_empty() {
+        assert!(dest.is_empty(), "Source and destination lengths must match");
+        return;
+    }
+    let ek = ExpandedKey::new_encrypt(key);
+    cbc256_encrypt_into_ek(data, &ek, iv, dest);
+}
+
+/// Encrypt aligned data using a pre-expanded key and advance `iv`.
+///
+/// Retaining the key avoids expanding it for each block-aligned streaming chunk.
+/// Empty input leaves `iv` unchanged. No padding or authentication is added.
+///
+/// # Panics
+///
+/// Panics before modifying `iv` or `dest` if the buffer lengths differ or the
+/// input length is not a multiple of 16 bytes.
+pub fn cbc256_encrypt_into_ek(data: &[u8], ek: &ExpandedKey, iv: &mut [u8; 16], dest: &mut [u8]) {
     let len = data.len();
     assert_eq!(len, dest.len(), "Source and destination lengths must match");
     if len == 0 {
@@ -24,7 +43,6 @@ pub fn cbc256_encrypt_into(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], dest:
         "Data length must be a multiple of {AES_BLOCK_SIZE} bytes, got {len}",
     );
 
-    let ek = ExpandedKey::new_encrypt(key);
     let mut i = 0;
     while i < len {
         let mut block = [0u8; AES_BLOCK_SIZE];
@@ -33,7 +51,7 @@ pub fn cbc256_encrypt_into(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], dest:
         }
 
         let mut out_block = [0u8; AES_BLOCK_SIZE];
-        aes256::encrypt_block(&block, &mut out_block, &ek);
+        aes256::encrypt_block(&block, &mut out_block, ek);
 
         dest[i..i + AES_BLOCK_SIZE].copy_from_slice(&out_block);
         iv.copy_from_slice(&out_block);
@@ -48,6 +66,25 @@ pub fn cbc256_encrypt_into(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], dest:
 ///
 /// Panics if the buffers differ in length or if `data` is not a multiple of 16 bytes.
 pub fn cbc256_decrypt_into(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], dest: &mut [u8]) {
+    if data.is_empty() {
+        assert!(dest.is_empty(), "Source and destination lengths must match");
+        return;
+    }
+    let dk = ExpandedKey::new_decrypt(key);
+    cbc256_decrypt_into_ek(data, &dk, iv, dest);
+}
+
+/// Decrypt aligned data using a pre-expanded key and advance `iv`.
+///
+/// The next IV is the last input ciphertext block, including when large inputs
+/// use parallel decryption. Empty input leaves `iv` unchanged. The caller must
+/// validate the protocol's integrity checks before using decrypted plaintext.
+///
+/// # Panics
+///
+/// Panics before modifying `iv` or `dest` if the buffer lengths differ or the
+/// input length is not a multiple of 16 bytes.
+pub fn cbc256_decrypt_into_ek(data: &[u8], dk: &ExpandedKey, iv: &mut [u8; 16], dest: &mut [u8]) {
     let len = data.len();
     assert_eq!(len, dest.len(), "Source and destination lengths must match");
     if len == 0 {
@@ -58,13 +95,11 @@ pub fn cbc256_decrypt_into(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], dest:
         "Data length must be a multiple of {AES_BLOCK_SIZE} bytes, got {len}",
     );
 
-    let dk = ExpandedKey::new_decrypt(key);
-
     let mut next_iv = [0u8; 16];
     next_iv.copy_from_slice(&data[len - 16..len]);
 
     if len < PARALLEL_THRESHOLD {
-        cbc256_decrypt_internal(data, dest, &dk, iv);
+        cbc256_decrypt_internal(data, dest, dk, iv);
     } else {
         dest.par_chunks_mut(CHUNK_SIZE)
             .enumerate()
@@ -81,7 +116,7 @@ pub fn cbc256_decrypt_into(data: &[u8], key: &[u8; 32], iv: &mut [u8; 16], dest:
                     local_iv.copy_from_slice(&data[start - 16..start]);
                 }
 
-                cbc256_decrypt_internal(data_chunk, dest_chunk, &dk, &mut local_iv);
+                cbc256_decrypt_internal(data_chunk, dest_chunk, dk, &mut local_iv);
             });
     }
 

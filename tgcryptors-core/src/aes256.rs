@@ -5,7 +5,10 @@
 //! is selected by RustCrypto at runtime on supported x86 and ARM platforms.
 //! Raw key schedules are deliberately private; the backend zeroizes them on drop.
 
-use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
+use aes::cipher::{
+    consts::U16, BlockCipherDecClosure, BlockCipherDecrypt, BlockCipherEncClosure,
+    BlockCipherEncrypt, KeyInit,
+};
 
 /// AES block size in bytes.
 pub const AES_BLOCK_SIZE: usize = 16;
@@ -35,6 +38,24 @@ impl ExpandedKey {
     #[inline]
     pub fn new_decrypt(key: &[u8; 32]) -> Self {
         Self::new_encrypt(key)
+    }
+
+    // Select the runtime backend once for an entire dependent-block mode call.
+    // The closure cannot retain or expose the backend's opaque key schedule.
+    #[inline]
+    pub(crate) fn encrypt_with_backend(
+        &self,
+        closure: impl BlockCipherEncClosure<BlockSize = U16>,
+    ) {
+        self.cipher.encrypt_with_backend(closure);
+    }
+
+    #[inline]
+    pub(crate) fn decrypt_with_backend(
+        &self,
+        closure: impl BlockCipherDecClosure<BlockSize = U16>,
+    ) {
+        self.cipher.decrypt_with_backend(closure);
     }
 }
 

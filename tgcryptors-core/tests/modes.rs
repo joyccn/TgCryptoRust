@@ -1,8 +1,8 @@
 //! Independent known-answer and streaming-boundary tests for the public modes.
 use tgcryptors_core::{
     aes256::{encrypt_block, ExpandedKey},
-    cbc256_decrypt_into, cbc256_encrypt_into, ctr256_encrypt_into, ige256_decrypt_into,
-    ige256_encrypt_into,
+    cbc256_decrypt_into, cbc256_decrypt_into_ek, cbc256_encrypt_into, cbc256_encrypt_into_ek,
+    ctr256_encrypt_into, ige256_decrypt_into, ige256_encrypt_into,
 };
 
 fn hex<const N: usize>(value: &str) -> [u8; N] {
@@ -41,6 +41,55 @@ fn cbc256_nist_sp800_38a_f2_5_and_f2_6() {
         cbc256_decrypt_into(&ciphertext[split..], &key, &mut iv, &mut output[split..]);
         assert_eq!(output, plaintext);
         assert_eq!(iv.as_slice(), &ciphertext[48..]);
+    }
+}
+
+#[test]
+fn cbc256_preexpanded_streams_match_nist_vectors() {
+    let key = hex::<32>(KEY);
+    let ek = ExpandedKey::new_encrypt(&key);
+    let plaintext = hex::<64>(PLAINTEXT);
+    let initial_iv = hex::<16>("000102030405060708090a0b0c0d0e0f");
+    let ciphertext = hex::<64>(concat!(
+        "f58c4c04d6e5f1ba779eabfb5f7bfbd6",
+        "9cfc4e967edb808d679f777bc6702c7d",
+        "39f23369a9d9bacfa530e26304231461",
+        "b2eb05e2c39be9fcda6c19078c6a9d1b"
+    ));
+    // Include empty chunks at both ends and every possible aligned split.
+    for split in (0..=64).step_by(16) {
+        let mut iv = initial_iv;
+        let mut output = [0; 64];
+        cbc256_encrypt_into_ek(&plaintext[..split], &ek, &mut iv, &mut output[..split]);
+        cbc256_encrypt_into_ek(&plaintext[split..], &ek, &mut iv, &mut output[split..]);
+        assert_eq!(output, ciphertext);
+        assert_eq!(iv.as_slice(), &ciphertext[48..]);
+
+        let mut iv = initial_iv;
+        cbc256_decrypt_into_ek(&ciphertext[..split], &ek, &mut iv, &mut output[..split]);
+        cbc256_decrypt_into_ek(&ciphertext[split..], &ek, &mut iv, &mut output[split..]);
+        assert_eq!(output, plaintext);
+        assert_eq!(iv.as_slice(), &ciphertext[48..]);
+    }
+}
+
+#[test]
+fn cbc256_preexpanded_validation_does_not_modify_buffers_or_iv() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    let ek = ExpandedKey::new_encrypt(&hex::<32>(KEY));
+    for crypt in [cbc256_encrypt_into_ek, cbc256_decrypt_into_ek] {
+        for (input_len, output_len) in [(0, 1), (15, 15), (16, 15), (17, 17)] {
+            let input = vec![0x42; input_len];
+            let mut output = vec![0xa5; output_len];
+            let mut iv = [0x24; 16];
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                crypt(&input, &ek, &mut iv, &mut output);
+            }));
+            assert!(result.is_err());
+            assert_eq!(iv, [0x24; 16]);
+            assert!(output.iter().all(|&byte| byte == 0xa5));
+        }
     }
 }
 

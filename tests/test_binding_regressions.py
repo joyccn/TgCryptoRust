@@ -1,5 +1,7 @@
 """Regression coverage for native buffer ownership and state validation."""
 
+import subprocess
+import sys
 import threading
 import time
 import unittest
@@ -32,6 +34,58 @@ class BindingRegressionTests(unittest.TestCase):
         self.assertEqual(tgcryptors.ctr256_encrypt(data, key, iv, state), expected)
         for value in (data, key, iv, state):
             value.append(0)
+
+    @unittest.skipUnless(sys.version_info >= (3, 12), "Python buffer hooks require 3.12+")
+    def test_invalid_fixed_arguments_do_not_export_mutable_payload(self):
+        class Payload(bytearray):
+            def __buffer__(self, flags):
+                raise AssertionError("invalid parameters must be rejected before payload export")
+
+        for argument, bad_value in (("key", bytes(31)), ("iv", bytes(15)), ("state", b"\x10")):
+            with self.subTest(argument=argument):
+                arguments = {"key": self.key, "iv": bytearray(self.iv), "state": bytearray(1)}
+                arguments[argument] = bad_value
+                with self.assertRaises(ValueError):
+                    tgcryptors.ctr256_encrypt(Payload(b"payload"), **arguments)
+                for value in arguments.values():
+                    if isinstance(value, bytearray):
+                        value.append(0)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux address-space limits")
+    def test_mutable_snapshot_allocation_failure_raises_memory_error(self):
+        # A separate process limits only its own address space. Rust Vec::to_vec
+        # aborts on allocation failure; the binding must use fallible allocation
+        # and preserve the IV/state when it translates failure to MemoryError.
+        script = r'''
+import os
+import resource
+import tgcryptors
+
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+data = bytearray(32 * 1024 * 1024)
+key, iv, state = bytes(range(32)), bytearray(range(16)), bytearray(1)
+tgcryptors.ctr256_encrypt(b"warmup", key, bytes(iv), bytes(state))
+with open("/proc/self/statm") as statm:
+    address_space = int(statm.read().split()[0]) * os.sysconf("SC_PAGE_SIZE")
+original_limits = resource.getrlimit(resource.RLIMIT_AS)
+failed = False
+try:
+    resource.setrlimit(resource.RLIMIT_AS, (address_space + 1024 * 1024, original_limits[1]))
+    try:
+        tgcryptors.ctr256_encrypt(data, key, iv, state)
+    except MemoryError:
+        failed = True
+finally:
+    resource.setrlimit(resource.RLIMIT_AS, original_limits)
+assert failed, "the limited process unexpectedly allocated a full snapshot"
+assert iv == bytearray(range(16)) and state == bytearray(1)
+for value in (data, iv, state):
+    value.append(0)
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, timeout=30
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_state_buffers_cannot_resize_while_native_call_runs(self):
         # Large enough to observe GIL release even on AES-accelerated machines.

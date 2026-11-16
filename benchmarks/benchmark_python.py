@@ -12,6 +12,7 @@ import json
 import os
 import platform
 import statistics
+import subprocess
 import time
 from pathlib import Path
 
@@ -28,6 +29,8 @@ def measure(repeats: int) -> dict[str, float]:
         loops = max(16, min(10000, 16 * 1024 * 1024 // size))
         ctr = tgcryptors.Ctr256(key, iv)
         ige = tgcryptors.Ige256(key, iv_ige)
+        cbc_enc = tgcryptors.Cbc256(key, iv)
+        cbc_dec = tgcryptors.Cbc256(key, iv)
         operations = [
             ("ctr", lambda: tgcryptors.ctr256_encrypt(data, key, iv, b"\0")),
             ("cbc_enc", lambda: tgcryptors.cbc256_encrypt(data, key, iv)),
@@ -35,6 +38,8 @@ def measure(repeats: int) -> dict[str, float]:
             ("ige", lambda: tgcryptors.ige256_encrypt(data, key, iv_ige)),
             ("ctr_stream", lambda: ctr.update(data)),
             ("ige_stream", lambda: ige.encrypt(data)),
+            ("cbc_enc_stream", lambda: cbc_enc.encrypt(data)),
+            ("cbc_dec_stream", lambda: cbc_dec.decrypt(data)),
         ]
         for name, operation in operations:
             for _ in range(4):
@@ -53,10 +58,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, help="Write the report as JSON")
     parser.add_argument("--repeats", type=int, default=3, help="Timing batches (default: 3)")
+    parser.add_argument("--label", default="working-tree", help="Identify the built revision/phase")
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be positive")
     report = {
+        "label": args.label,
+        "rustc": subprocess.check_output(["rustc", "--version"], text=True).strip(),
+        "source_revision": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True
+        ).strip(),
+        "source_dirty": subprocess.run(["git", "diff", "--quiet"], check=False).returncode != 0,
         "unit": "microseconds_per_call",
         "python": platform.python_version(),
         "platform": platform.platform(),

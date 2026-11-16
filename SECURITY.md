@@ -40,6 +40,13 @@ operations. Exports do not prevent another thread overwriting existing bytes.
   checks at the protocol layer. Do not expose unauthenticated plaintext.
 - Use separate encryption/decryption stream objects initialized with the proper
   direction-specific key and IV. Do not mix directions on an IGE state.
+- `cdn256_iv` constructs an aligned CDN range IV by replacing its 32-bit
+  counter field. It checks the starting offset, not the complete range length.
+  Callers must prevent counter exhaustion and verify plaintext hashes against
+  trusted origin-provided hashes before consuming the range.
+- `Cbc256` retains chaining state but performs no Passport prefix validation,
+  hash verification or padding. CBC is malleable without protocol integrity
+  checks; do not expose decrypted values before those checks pass.
 - Telegram CDN transport, Passport data, and MTProto messages have different
   derivation and validation rules; an AES key must come from the correct one.
 
@@ -54,9 +61,12 @@ Reference specifications and implementation:
 
 Tests cover published AES/CBC/CTR known-answer vectors, an independently generated
 OpenSSL AES-256-IGE vector, streaming boundaries, counter carries, parallel chunk
-boundaries, and mutable Python buffer ownership. The Python suite has 27 tests and the Rust
-core has 21 unit tests plus 5 mode integration tests. Passing them establishes these
+boundaries, CDN IV construction, CBC stream state, and mutable Python buffer
+ownership and allocation failures. Passing them establishes these
 specific behaviors, not complete MTProto or TDLib interoperability.
+
+See [Telegram integration](docs/TELEGRAM.md) for the exact protocol boundaries
+and [dependency review](docs/DEPENDENCIES.md) for upstream fixes and limitations.
 
 ## Reporting
 

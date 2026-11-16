@@ -10,7 +10,7 @@ Rust-powered AES-256 primitives and streaming modes for Telegram clients.
 
 [![CI](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml/badge.svg)](https://github.com/joyccn/TgCryptoRust/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Python](https://img.shields.io/badge/python-3.9--3.14-brightgreen)
+![Python](https://img.shields.io/badge/python-3.9--3.15-brightgreen)
 ![Rust](https://img.shields.io/badge/rust-1.89%2B-orange)
 
 **TgCryptoRust** provides a compatible Python API for [TgCrypto](https://github.com/pyrogram/tgcrypto),
@@ -23,7 +23,7 @@ It implements the cryptographic algorithms Telegram requires, namely:
 
 ## Requirements
 
-- Python 3.9 through 3.14
+- Python 3.9 through 3.15 (including 3.15.2)
 - Rust 1.89+ (only when building from source)
 
 The release workflows build wheels for common desktop and server platforms.
@@ -184,6 +184,29 @@ decoder = tgcrypto.Ige256(key, iv)
 assert decoder.decrypt(encrypted) == data
 ```
 
+CBC also supports a reusable key schedule and block-aligned streaming:
+
+```python
+stream = tgcryptors.Cbc256(key, iv[:16])
+encrypted = stream.encrypt(data[:512]) + stream.encrypt(data[512:])
+decoder = tgcryptors.Cbc256(key, iv[:16])
+assert decoder.decrypt(encrypted) == data
+```
+
+No stream adds or removes padding. Use a fresh IV for each independent CBC
+message; Passport uses its own random-prefix format, not PKCS#7.
+
+For Telegram CDN ranges, construct the starting IV with the protocol's
+32-bit block index, rather than adding a byte offset to a generic CTR IV:
+
+```python
+# offset is the file byte offset: divisible by 16, and smaller than 2**36.
+range_iv = tgcryptors.cdn256_iv(server_iv, offset)
+plaintext = tgcryptors.ctr256_decrypt(ciphertext, key, range_iv, b"\x00")
+# Verify the complete range against trusted origin-provided file hashes
+# before consuming plaintext; CTR provides no authentication.
+```
+
 Use a separate object for each logical stream and direction. Reuse a stream's
 key schedule only for subsequent chunks of that stream; never reuse a CTR
 keystream for unrelated plaintext.
@@ -227,7 +250,7 @@ order, `bytes` return values, and mutable CTR carry semantics:
 | `cbc256_encrypt` | `(data, key, iv)` |
 | `cbc256_decrypt` | `(data, key, iv)` |
 
-`Ctr256`, `Ige256`, and `runtime_info` extend that API. Compatibility tests cover
+`Ctr256`, `Ige256`, `Cbc256`, `cdn256_iv`, and `runtime_info` extend that API. Compatibility tests cover
 the documented inputs and state behavior; they do not establish complete
 interoperability with every Telegram client or TDLib session. Both import names
 ship the same native objects and type information.
@@ -251,6 +274,11 @@ primitives. This package supplies AES modes, not a complete Telegram/TDLib clien
 See the [Python performance guide](docs/PYTHON.md) for choosing stream APIs and
 avoiding copies. Both Python import names ship type hints (`py.typed`) while
 continuing to call native functions directly.
+
+The [Telegram integration guide](docs/TELEGRAM.md) details MTProto 2, CDN range
+counters, Passport padding/hashes, and validation responsibilities. The
+[dependency review](docs/DEPENDENCIES.md) records checked versions, upstream
+changelogs, deprecations, and Python 3.15 support.
 
 ## Migrating to 2.0
 
@@ -291,7 +319,7 @@ Existing code that imports `tgcrypto` can remain unchanged.
 
 ```bash
 # Set up environment
-uv sync --frozen --python 3.14
+uv sync --frozen --python 3.15.2
 
 # Build and install the native module
 uv run --with "maturin[patchelf]==1.16.0" maturin develop --release --locked
@@ -300,7 +328,7 @@ uv run --with "maturin[patchelf]==1.16.0" maturin develop --release --locked
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-The Python suite currently contains 27 tests covering the API, streaming,
+The Python suite covers the API, streaming,
 mutable buffers, validation, package exports, and performance-sensitive paths.
 
 Run the Rust checks:

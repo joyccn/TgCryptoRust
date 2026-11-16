@@ -1,0 +1,87 @@
+{
+  "benchmark": "preexpanded/ige",
+  "result_origin": "Historical benchmark run recovered from the conversation after the cloud environment reset. This file is not a new measurement.",
+  "recovery_limits": "Original Criterion reports and the original JSON artifact were lost during environment reset. Slope point estimates are restored exactly from prior tool output; confidence interval bounds are rounded values from the prior console output. Raw samples, standard errors, full-precision interval bounds, and host details cannot be reconstructed.",
+  "operation": "Encrypt fixed-size input into retained output using a pre-expanded key; reset IV each iteration.",
+  "change": "Select the RustCrypto AES backend once per IGE call rather than once per block, retaining opaque and zeroized key schedules.",
+  "baseline_source_revision": "74b216b7cff77a73cf9c984a15ec7703ba454025",
+  "baseline_note": "Compare the original mode implementation with its targeted optimization. Both runs use the same dependency versions stated below; the IGE baseline already includes the dependency refresh to AES 0.9.4.",
+  "rust": "1.89.0",
+  "aes": "0.9.4",
+  "platform": "Linux x86_64 cloud machine (historical run)",
+  "backend": "rustcrypto-hardware",
+  "commands": [
+    "cargo bench -p tgcryptors-core --bench benchmark -- 'preexpanded/ige/(64|1024|16384)$' --sample-size 30 --measurement-time 2 --warm-up-time 1 --save-baseline before-ige-dispatch",
+    "cargo bench -p tgcryptors-core --bench benchmark -- 'preexpanded/ige/(64|1024|16384)$' --sample-size 30 --measurement-time 2 --warm-up-time 1 --baseline before-ige-dispatch"
+  ],
+  "statistic": "Criterion linear-regression slope in nanoseconds per iteration. Time reduction is calculated from the exact slope point estimates; 95% interval bounds were recovered in their console-rounded form.",
+  "limitations": "One hardware backend on one cloud host; results depend on CPU and timing noise. Excludes Python overhead, output allocations, and key expansion. Measures encryption only; no decryption speedup is quantified by this artifact.",
+  "results": [
+    {
+      "bytes": 64,
+      "before_ns": {
+        "point_estimate": 160.12620664255675,
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 156.23,
+          "upper_bound": 163.98,
+          "bounds_precision": "Rounded values recovered from Criterion console output; original full-precision bounds are unavailable."
+        }
+      },
+      "after_ns": {
+        "point_estimate": 114.44346502896279,
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 112.32,
+          "upper_bound": 118.05,
+          "bounds_precision": "Rounded values recovered from Criterion console output; original full-precision bounds are unavailable."
+        }
+      },
+      "time_reduction_percent": 28.5292099097618
+    },
+    {
+      "bytes": 1024,
+      "before_ns": {
+        "point_estimate": 2299.2361157867167,
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 2253.5,
+          "upper_bound": 2386.2,
+          "bounds_precision": "Rounded values recovered from Criterion console output; original full-precision bounds are unavailable."
+        }
+      },
+      "after_ns": {
+        "point_estimate": 2080.792976598065,
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 2050.3,
+          "upper_bound": 2128.1,
+          "bounds_precision": "Rounded values recovered from Criterion console output; original full-precision bounds are unavailable."
+        }
+      },
+      "time_reduction_percent": 9.500683191639425
+    },
+    {
+      "bytes": 16384,
+      "before_ns": {
+        "point_estimate": 35813.24883139658,
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 35299,
+          "upper_bound": 36527,
+          "bounds_precision": "Rounded values recovered from Criterion console output; original full-precision bounds are unavailable."
+        }
+      },
+      "after_ns": {
+        "point_estimate": 32907.456138451875,
+        "confidence_interval": {
+          "confidence_level": 0.95,
+          "lower_bound": 32589,
+          "upper_bound": 33435,
+          "bounds_precision": "Rounded values recovered from Criterion console output; original full-precision bounds are unavailable."
+        }
+      },
+      "time_reduction_percent": 8.113736641500314
+    }
+  ]
+}
