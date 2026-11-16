@@ -634,7 +634,7 @@ checksum = "8c447be3a2abfa84b2d91680c56600bd6b2873866de27b36ec911be705e291da"
 
 [[package]]
 name = "tgcryptors-core"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "aes",
  "criterion",
@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "tgcryptors-python"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "pyo3",
  "tgcryptors-core",

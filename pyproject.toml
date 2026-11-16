@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "TgCryptoRust"
-version = "2.0.0"
+version = "2.0.1"
 description = "Rust-powered drop-in replacement for TgCrypto"
 readme = "README.md"
 requires-python = ">=3.10,<3.16"
@@ -54,8 +54,8 @@ python-source = "python"
 features = ["pyo3/extension-module"]
 include = [
     { path = "LICENSE", format = "sdist" },
-    { path = "python/tgcrypto/__init__.py", format = "wheel" },
-    { path = "python/tgcryptors/__init__.py", format = "wheel" },
+    { path = "python/tgcrypto/__init__.py", format = ["sdist", "wheel"] },
+    { path = "python/tgcryptors/__init__.py", format = ["sdist", "wheel"] },
     { path = "python/tgcryptors/*.pyi", format = ["sdist", "wheel"] },
     { path = "python/tgcryptors/py.typed", format = ["sdist", "wheel"] },
     { path = "python/tgcrypto/*.pyi", format = ["sdist", "wheel"] },
